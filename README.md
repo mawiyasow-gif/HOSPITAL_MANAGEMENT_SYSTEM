@@ -86,7 +86,7 @@ Physical_Health_Clinic_DB/
 
 ### Database Setup
 
-1.  Create a MySQL database (e.g., `clinic_db`).
+1.  Create a MySQL database as Pysical_Health_Clinic_DB.
 2.  Import your schemas or migration scripts.
 3.  Configure database credentials in `database.py`.
 
