@@ -198,7 +198,7 @@ class HealthWorkerWindow(ctk.CTkToplevel):
             messagebox.showerror("Database Error", f"Failed to load health workers:\n{e}")
 
     def add_worker(self):
-        """Add a new health worker record to the database."""
+        """Add a new health worker record and create a linked user account."""
         name = self.fullname.get().strip()
         gender = self.gender.get()
         phone = self.phone.get().strip()
@@ -212,11 +212,39 @@ class HealthWorkerWindow(ctk.CTkToplevel):
         try:
             conn = connect_db()
             cursor = conn.cursor()
-            query = """
-                INSERT INTO Health_Workers (FullName, Gender, PhoneNumber, Address, Role)
-                VALUES (%s, %s, %s, %s, %s)
+
+            # Normalize role for the Users table enum
+            norm_role = role.capitalize()
+            if norm_role not in ['Administrator', 'Doctor', 'Receptionist', 'Nurse', 'Pharmacist', 'Accountant']:
+                norm_role = 'Nurse'
+
+            # Generate a unique username
+            base_username = "".join([c for c in name.lower() if c.isalnum()])
+            if not base_username:
+                base_username = "user"
+            username = base_username
+            suffix = 1
+            while True:
+                cursor.execute("SELECT UsersID FROM Users WHERE username = %s", (username,))
+                if not cursor.fetchone():
+                    break
+                username = f"{base_username}{suffix}"
+                suffix += 1
+
+            # Insert into Users first
+            user_query = """
+                INSERT INTO Users (FullName, username, Password, Role, Email, Phone, Gender, Status)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
             """
-            cursor.execute(query, (name, gender, phone, address, role))
+            cursor.execute(user_query, (name, username, 'Password123', norm_role, None, phone, gender, 'Active'))
+            users_id = cursor.lastrowid
+
+            # Insert into Health_Workers linked to the UsersID
+            query = """
+                INSERT INTO Health_Workers (UsersID, FullName, Gender, PhoneNumber, Address, Role)
+                VALUES (%s, %s, %s, %s, %s, %s)
+            """
+            cursor.execute(query, (users_id, name, gender, phone, address, role))
             conn.commit()
             
             # Save photo if selected
@@ -231,14 +259,14 @@ class HealthWorkerWindow(ctk.CTkToplevel):
 
             conn.close()
 
-            messagebox.showinfo("Success", "Health worker added successfully!")
+            messagebox.showinfo("Success", f"Health worker and linked user '{username}' (password: Password123) added successfully!")
             self.load_workers()
             self.clear_fields()
         except Exception as e:
             messagebox.showerror("Database Error", f"Failed to add health worker:\n{e}")
 
     def update_worker(self):
-        """Update the selected health worker record in the database."""
+        """Update the selected health worker record and propagate changes to their linked user account."""
         if not self.selected_worker_id:
             messagebox.showwarning("Selection Warning", "Please select a health worker from the list to update.")
             return
@@ -256,6 +284,45 @@ class HealthWorkerWindow(ctk.CTkToplevel):
         try:
             conn = connect_db()
             cursor = conn.cursor()
+
+            # Check if there is a linked UsersID
+            cursor.execute("SELECT UsersID FROM Health_Workers WHERE WorkerID = %s", (self.selected_worker_id,))
+            linked_user_row = cursor.fetchone()
+
+            norm_role = role.capitalize()
+            if norm_role not in ['Administrator', 'Doctor', 'Receptionist', 'Nurse', 'Pharmacist', 'Accountant']:
+                norm_role = 'Nurse'
+
+            if linked_user_row and linked_user_row[0]:
+                users_id = linked_user_row[0]
+                cursor.execute("""
+                    UPDATE Users
+                    SET FullName = %s, Role = %s, Phone = %s, Gender = %s
+                    WHERE UsersID = %s
+                """, (name, norm_role, phone, gender, users_id))
+            else:
+                # Self-healing: Create missing user account
+                base_username = "".join([c for c in name.lower() if c.isalnum()])
+                if not base_username:
+                    base_username = "user"
+                username = base_username
+                suffix = 1
+                while True:
+                    cursor.execute("SELECT UsersID FROM Users WHERE username = %s", (username,))
+                    if not cursor.fetchone():
+                        break
+                    username = f"{base_username}{suffix}"
+                    suffix += 1
+
+                cursor.execute("""
+                    INSERT INTO Users (FullName, username, Password, Role, Email, Phone, Gender, Status)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                """, (name, username, 'Password123', norm_role, None, phone, gender, 'Active'))
+                new_users_id = cursor.lastrowid
+                
+                cursor.execute("UPDATE Health_Workers SET UsersID = %s WHERE WorkerID = %s", (new_users_id, self.selected_worker_id))
+
+            # Update the Health Worker record
             query = """
                 UPDATE Health_Workers 
                 SET FullName = %s, Gender = %s, PhoneNumber = %s, Address = %s, Role = %s
@@ -282,24 +349,35 @@ class HealthWorkerWindow(ctk.CTkToplevel):
             messagebox.showerror("Database Error", f"Failed to update health worker:\n{e}")
 
     def delete_worker(self):
-        """Delete the selected health worker record from the database."""
+        """Delete the selected health worker record and their linked user account."""
         if not self.selected_worker_id:
             messagebox.showwarning("Selection Warning", "Please select a health worker from the list to delete.")
             return
 
-        confirm = messagebox.askyesno("Confirm Delete", "Are you sure you want to delete this health worker record?")
+        confirm = messagebox.askyesno("Confirm Delete", "Are you sure you want to delete this health worker record and its linked user credentials?")
         if not confirm:
             return
 
         try:
             conn = connect_db()
             cursor = conn.cursor()
+
+            # Retrieve the linked UsersID
+            cursor.execute("SELECT UsersID FROM Health_Workers WHERE WorkerID = %s", (self.selected_worker_id,))
+            linked_user_row = cursor.fetchone()
+
+            # Delete the Health_Worker
             query = "DELETE FROM Health_Workers WHERE WorkerID = %s"
             cursor.execute(query, (self.selected_worker_id,))
+
+            # Delete the linked User
+            if linked_user_row and linked_user_row[0]:
+                cursor.execute("DELETE FROM Users WHERE UsersID = %s", (linked_user_row[0],))
+
             conn.commit()
             conn.close()
 
-            messagebox.showinfo("Success", "Health worker deleted successfully!")
+            messagebox.showinfo("Success", "Health worker and linked user account deleted successfully!")
             self.load_workers()
             self.clear_fields()
         except Exception as e:

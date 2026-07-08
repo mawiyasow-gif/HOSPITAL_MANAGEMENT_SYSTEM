@@ -308,8 +308,20 @@ class DiagnosisWindow(ctk.CTkToplevel):
                 worker_list.append(f"{row[0]} - {row[1]}")
 
             self.worker_combo.configure(values=worker_list)
-            if worker_list:
+            
+            # If opened from Doctor Dashboard, pre-select the logged-in doctor and disable the dropdown
+            if hasattr(self.master, 'doctor_worker_id'):
+                doctor_str = None
+                for worker in worker_list:
+                    if worker.startswith(f"{self.master.doctor_worker_id} -"):
+                        doctor_str = worker
+                        break
+                if doctor_str:
+                    self.worker_combo.set(doctor_str)
+                    self.worker_combo.configure(state="disabled")
+            elif worker_list:
                 self.worker_combo.set(worker_list[0])
+                
             conn.close()
         except Exception as e:
             messagebox.showerror("Database Error", f"Failed to load health workers:\n{e}")

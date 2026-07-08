@@ -36,13 +36,31 @@ class LoginApp(ctk.CTk):
         )
         self.username.pack(pady=10)
 
+        # Password layout frame to keep the toggle button inline
+        password_frame = ctk.CTkFrame(self, fg_color="transparent")
+        password_frame.pack(pady=10)
+
         self.password = ctk.CTkEntry(
-            self,
-            width=300,
+            password_frame,
+            width=255,
             placeholder_text="Password",
             show="*"
         )
-        self.password.pack(pady=10)
+        self.password.pack(side="left")
+
+        self.password_visible = False
+        self.toggle_btn = ctk.CTkButton(
+            password_frame,
+            text="👁️",
+            width=40,
+            height=28,
+            font=("Arial", 14),
+            fg_color="transparent",
+            text_color="gray",
+            hover_color=("#EAEAEA", "#2D2D2D"),
+            command=self.toggle_password_visibility
+        )
+        self.toggle_btn.pack(side="left", padx=(5, 0))
 
         login_btn = ctk.CTkButton(
             self,
@@ -61,47 +79,97 @@ class LoginApp(ctk.CTk):
         )
         exit_btn.pack()
 
-    def login(self):
+    def toggle_password_visibility(self):
+        if self.password_visible:
+            self.password.configure(show="*")
+            self.toggle_btn.configure(text_color="gray")
+            self.password_visible = False
+        else:
+            self.password.configure(show="")
+            self.toggle_btn.configure(text_color="#1F6AA5")
+            self.password_visible = True
 
-        user = self.username.get()
-        password = self.password.get()
+    def login(self):
+        user = self.username.get().strip()
+        password = self.password.get().strip()
+
+        if not user or not password:
+            messagebox.showerror("Validation Error", "Please fill in both Username and Password.")
+            return
 
         try:
-
             conn = connect_db()
             cursor = conn.cursor()
 
+            # Query to join Users and Health_Workers to get IDs, FullName, Role, and Status
             query = """
-            SELECT *
-            FROM Users
-            WHERE username=%s
-            AND Password=%s
+                SELECT u.UsersID, hw.WorkerID, u.FullName, u.Role, u.Status, u.Phone, u.Gender
+                FROM Users u
+                LEFT JOIN Health_Workers hw ON u.UsersID = hw.UsersID
+                WHERE u.username = %s AND u.Password = %s
             """
-
             cursor.execute(query, (user, password))
-
             result = cursor.fetchone()
 
             if result:
-                messagebox.showinfo("Success", "Login Successful!")
+                user_id, worker_id, full_name, role, status, phone, gender = result
+
+                # Verify Status is Active
+                if status != "Active":
+                    messagebox.showerror("Access Denied", "Your account is Inactive. Please contact the System Administrator.")
+                    conn.close()
+                    return
+
+                # Self-healing: if worker_id is missing, create it on the fly
+                if worker_id is None:
+                    worker_phone = phone if phone else f"+232-00-{user_id:06d}"
+                    cursor.execute("SELECT WorkerID FROM Health_Workers WHERE PhoneNumber = %s", (worker_phone,))
+                    if cursor.fetchone():
+                        worker_phone = f"+232-99-{user_id:06d}"
+
+                    cursor.execute("""
+                        INSERT INTO Health_Workers (UsersID, FullName, Gender, PhoneNumber, Address, Role)
+                        VALUES (%s, %s, %s, %s, %s, %s)
+                    """, (user_id, full_name, gender if gender else 'Male', worker_phone, 'Clinic Staff', role))
+                    conn.commit()
+                    worker_id = cursor.lastrowid
+
+                messagebox.showinfo("Success", f"Welcome back, {full_name}!")
                 self.destroy()
 
-                role = result[4]
-                user_info = {
-                    "username": result[2],
-                    "full_name": result[1],
-                    "role": result[4]
+                # Store user info in session
+                current_user = {
+                    "user_id": user_id,
+                    "worker_id": worker_id,
+                    "full_name": full_name,
+                    "role": role
                 }
+                import session
+                session.current_user = current_user
 
+                # Route to appropriate dashboard based on Role
                 if role == "Administrator":
                     from admin_dashboard import AdminDashboard
-                    app = AdminDashboard(admin_user=user_info)
+                    app = AdminDashboard(admin_user=current_user)
                 elif role == "Doctor":
                     from doctor_dashboard import DoctorDashboard
-                    app = DoctorDashboard(doctor_user=user_info)
+                    app = DoctorDashboard(doctor_user=current_user)
+                elif role == "Receptionist":
+                    from receptionist_dashboard import ReceptionistDashboard
+                    app = ReceptionistDashboard(receptionist_user=current_user)
+                elif role == "Nurse":
+                    from nurse_dashboard import NurseDashboard
+                    app = NurseDashboard(nurse_user=current_user)
+                elif role == "Pharmacist":
+                    from pharmacist_dashboard import PharmacistDashboard
+                    app = PharmacistDashboard(pharmacist_user=current_user)
+                elif role == "Accountant":
+                    from accountant_dashboard import AccountantDashboard
+                    app = AccountantDashboard(accountant_user=current_user)
                 else:
                     from dashboard import Dashboard
                     app = Dashboard()
+                
                 app.mainloop()
 
             else:
@@ -110,7 +178,7 @@ class LoginApp(ctk.CTk):
             conn.close()
 
         except Exception as e:
-            messagebox.showerror("Database Error", str(e))
+            messagebox.showerror("Database Error", f"An error occurred during login:\n{e}")
 
 
 if __name__ == "__main__":

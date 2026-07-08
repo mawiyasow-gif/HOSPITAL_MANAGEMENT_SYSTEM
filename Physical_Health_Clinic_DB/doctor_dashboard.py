@@ -31,8 +31,8 @@ class DoctorDashboard(ctk.CTk):
             "last_login": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         }
 
-        # Retrieve Doctor's Health Worker ID based on their Full Name or Username
-        self.doctor_worker_id = self.get_doctor_worker_id()
+        # Use the worker_id from session info
+        self.doctor_worker_id = self.doctor_user.get("worker_id", 1)
 
         # ==============================
         # Main Layout Container
@@ -141,26 +141,26 @@ class DoctorDashboard(ctk.CTk):
         cards_row1 = ctk.CTkFrame(self.cards_frame, fg_color="transparent")
         cards_row1.pack(fill="x", pady=5)
 
-        self.assigned_patients_card = self.create_stat_card(cards_row1, "👥", "Assigned Patients", "0", "#4CAF50")
+        self.assigned_patients_card = self.create_stat_card(cards_row1, "👥", "Assigned Patients", "0", "#4CAF50", self.open_patients)
         self.assigned_patients_card.pack(side="left", padx=5, expand=True, fill="x")
 
-        self.today_appointments_card = self.create_stat_card(cards_row1, "📅", "Today's Appointments", "0", "#2196F3")
+        self.today_appointments_card = self.create_stat_card(cards_row1, "📅", "Today's Appointments", "0", "#2196F3", self.open_appointments)
         self.today_appointments_card.pack(side="left", padx=5, expand=True, fill="x")
 
-        self.diagnoses_card = self.create_stat_card(cards_row1, "🩺", "Diagnoses Completed", "0", "#9C27B0")
+        self.diagnoses_card = self.create_stat_card(cards_row1, "🩺", "Diagnoses Completed", "0", "#9C27B0", self.open_diagnosis)
         self.diagnoses_card.pack(side="left", padx=5, expand=True, fill="x")
 
         # 3 Cards Row 2
         cards_row2 = ctk.CTkFrame(self.cards_frame, fg_color="transparent")
         cards_row2.pack(fill="x", pady=5)
 
-        self.treatments_card = self.create_stat_card(cards_row2, "💊", "Treatments Prescribed", "0", "#E91E63")
+        self.treatments_card = self.create_stat_card(cards_row2, "💊", "Treatments Prescribed", "0", "#E91E63", self.open_treatment)
         self.treatments_card.pack(side="left", padx=5, expand=True, fill="x")
 
-        self.pending_app_card = self.create_stat_card(cards_row2, "⏳", "Pending Appointments", "0", "#FF9800")
+        self.pending_app_card = self.create_stat_card(cards_row2, "⏳", "Pending Appointments", "0", "#FF9800", self.open_appointments)
         self.pending_app_card.pack(side="left", padx=5, expand=True, fill="x")
 
-        self.completed_consult_card = self.create_stat_card(cards_row2, "✅", "Completed Consultations", "0", "#00BCD4")
+        self.completed_consult_card = self.create_stat_card(cards_row2, "✅", "Completed Consultations", "0", "#00BCD4", self.open_appointments)
         self.completed_consult_card.pack(side="left", padx=5, expand=True, fill="x")
 
         # ==============================
@@ -280,7 +280,7 @@ class DoctorDashboard(ctk.CTk):
             pass
         return 1  # Default fallback ID
 
-    def create_stat_card(self, parent, icon, title, value, color):
+    def create_stat_card(self, parent, icon, title, value, color, command=None):
         """Create a statistics card with a clean left accent bar to look professional."""
         card = ctk.CTkFrame(parent, corner_radius=10)
         accent_bar = ctk.CTkFrame(card, width=5, corner_radius=2, fg_color=color)
@@ -302,6 +302,17 @@ class DoctorDashboard(ctk.CTk):
         value_label.pack(fill="x", pady=(2, 5))
 
         card.value_label = value_label
+
+        if command:
+            card.configure(cursor="hand2")
+            card.bind("<Button-1>", lambda e: command())
+            accent_bar.bind("<Button-1>", lambda e: command())
+            content_frame.bind("<Button-1>", lambda e: command())
+            header_frame.bind("<Button-1>", lambda e: command())
+            icon_label.bind("<Button-1>", lambda e: command())
+            title_label.bind("<Button-1>", lambda e: command())
+            value_label.bind("<Button-1>", lambda e: command())
+
         return card
 
     def create_recent_table_frame(self, parent, title, columns):

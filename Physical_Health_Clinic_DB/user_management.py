@@ -318,11 +318,20 @@ class UserManagementWindow(ctk.CTkToplevel):
                 conn.close()
                 return
 
-            query = """
-                INSERT INTO Users (FullName, username, Password, Role, Email, Phone, Gender, Status)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-            """
             cursor.execute(query, (fullname, username, password, role, email, phone, gender, status))
+            new_users_id = cursor.lastrowid
+
+            # Sync with Health_Workers table
+            worker_phone = phone if phone else f"+232-00-{new_users_id:06d}"
+            cursor.execute("SELECT WorkerID FROM Health_Workers WHERE PhoneNumber = %s", (worker_phone,))
+            if cursor.fetchone():
+                worker_phone = f"+232-99-{new_users_id:06d}"
+
+            cursor.execute("""
+                INSERT INTO Health_Workers (UsersID, FullName, Gender, PhoneNumber, Address, Role)
+                VALUES (%s, %s, %s, %s, %s, %s)
+            """, (new_users_id, fullname, gender, worker_phone, 'Clinic Staff', role))
+
             conn.commit()
             conn.close()
 
@@ -361,12 +370,26 @@ class UserManagementWindow(ctk.CTkToplevel):
                 conn.close()
                 return
 
-            query = """
-                UPDATE Users
-                SET FullName=%s, username=%s, Role=%s, Email=%s, Phone=%s, Gender=%s, Status=%s
-                WHERE UsersID=%s
-            """
             cursor.execute(query, (fullname, username, role, email, phone, gender, status, self.selected_user_id))
+
+            # Sync with Health_Workers table
+            cursor.execute("SELECT WorkerID FROM Health_Workers WHERE UsersID = %s", (self.selected_user_id,))
+            worker_row = cursor.fetchone()
+
+            worker_phone = phone if phone else f"+232-00-{self.selected_user_id:06d}"
+
+            if worker_row:
+                cursor.execute("""
+                    UPDATE Health_Workers
+                    SET FullName = %s, Gender = %s, PhoneNumber = %s, Role = %s
+                    WHERE UsersID = %s
+                """, (fullname, gender, worker_phone, role, self.selected_user_id))
+            else:
+                cursor.execute("""
+                    INSERT INTO Health_Workers (UsersID, FullName, Gender, PhoneNumber, Address, Role)
+                    VALUES (%s, %s, %s, %s, %s, %s)
+                """, (self.selected_user_id, fullname, gender, worker_phone, 'Clinic Staff', role))
+
             conn.commit()
             conn.close()
 

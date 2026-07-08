@@ -171,42 +171,42 @@ class AdminDashboard(ctk.CTk):
         cards_row1.pack(fill="x", pady=5)
 
         # Card 1: Total Patients
-        self.patients_card = self.create_stat_card(cards_row1, "👥", "Total Patients", "0", "#4CAF50")
+        self.patients_card = self.create_stat_card(cards_row1, "👥", "Total Patients", "0", "#4CAF50", self.open_patients)
         self.patients_card.pack(side="left", padx=5, expand=True, fill="x")
 
         # Card 2: Total Health Workers
-        self.workers_card = self.create_stat_card(cards_row1, "👨‍⚕️", "Health Workers", "0", "#2196F3")
+        self.workers_card = self.create_stat_card(cards_row1, "👨‍⚕️", "Health Workers", "0", "#2196F3", self.open_health_workers)
         self.workers_card.pack(side="left", padx=5, expand=True, fill="x")
 
         # Card 3: Total Appointments
-        self.appointments_card = self.create_stat_card(cards_row1, "📅", "Appointments", "0", "#FF9800")
+        self.appointments_card = self.create_stat_card(cards_row1, "📅", "Appointments", "0", "#FF9800", self.open_appointments)
         self.appointments_card.pack(side="left", padx=5, expand=True, fill="x")
 
         # Card 4: Total Diagnoses
-        self.diagnoses_card = self.create_stat_card(cards_row1, "🩺", "Diagnoses", "0", "#9C27B0")
+        self.diagnoses_card = self.create_stat_card(cards_row1, "🩺", "Diagnoses", "0", "#9C27B0", self.open_diagnosis)
         self.diagnoses_card.pack(side="left", padx=5, expand=True, fill="x")
 
         cards_row2 = ctk.CTkFrame(self.cards_frame, fg_color="transparent")
         cards_row2.pack(fill="x", pady=5)
 
         # Card 5: Total Treatments
-        self.treatments_card = self.create_stat_card(cards_row2, "💊", "Treatments", "0", "#E91E63")
+        self.treatments_card = self.create_stat_card(cards_row2, "💊", "Treatments", "0", "#E91E63", self.open_treatment)
         self.treatments_card.pack(side="left", padx=5, expand=True, fill="x")
 
         # Card 6: Total Inventory
-        self.inventory_card = self.create_stat_card(cards_row2, "📦", "Inventory Items", "0", "#00BCD4")
+        self.inventory_card = self.create_stat_card(cards_row2, "📦", "Inventory Items", "0", "#00BCD4", self.open_inventory)
         self.inventory_card.pack(side="left", padx=5, expand=True, fill="x")
 
         # Card 7: Total Payments
-        self.payments_card = self.create_stat_card(cards_row2, "💳", "Payments", "0", "#FF5722")
+        self.payments_card = self.create_stat_card(cards_row2, "💳", "Payments", "0", "#FF5722", self.open_payment)
         self.payments_card.pack(side="left", padx=5, expand=True, fill="x")
 
         # Card 8: Total Receipts
-        self.receipts_card = self.create_stat_card(cards_row2, "🧾", "Receipts", "0", "#795548")
+        self.receipts_card = self.create_stat_card(cards_row2, "🧾", "Receipts", "0", "#795548", self.open_receipt)
         self.receipts_card.pack(side="left", padx=5, expand=True, fill="x")
 
         # Card 9: Total Revenue
-        self.revenue_card = self.create_stat_card(cards_row2, "💰", "Total Revenue", "Le 0", "#4CAF50")
+        self.revenue_card = self.create_stat_card(cards_row2, "💰", "Total Revenue", "Le 0", "#4CAF50", self.open_payment)
         self.revenue_card.pack(side="left", padx=5, expand=True, fill="x")
 
         # ==============================
@@ -349,16 +349,16 @@ class AdminDashboard(ctk.CTk):
         revenue_row = ctk.CTkFrame(self.revenue_summary_frame, fg_color="transparent")
         revenue_row.pack(fill="x", padx=10)
 
-        self.today_revenue_card = self.create_stat_card(revenue_row, "📅", "Today's Revenue", "Le 0", "#4CAF50")
+        self.today_revenue_card = self.create_stat_card(revenue_row, "📅", "Today's Revenue", "Le 0", "#4CAF50", self.open_payment)
         self.today_revenue_card.pack(side="left", padx=5, expand=True, fill="x")
 
-        self.week_revenue_card = self.create_stat_card(revenue_row, "📆", "This Week's Revenue", "Le 0", "#2196F3")
+        self.week_revenue_card = self.create_stat_card(revenue_row, "📆", "This Week's Revenue", "Le 0", "#2196F3", self.open_payment)
         self.week_revenue_card.pack(side="left", padx=5, expand=True, fill="x")
 
-        self.month_revenue_card = self.create_stat_card(revenue_row, "📊", "This Month's Revenue", "Le 0", "#FF9800")
+        self.month_revenue_card = self.create_stat_card(revenue_row, "📊", "This Month's Revenue", "Le 0", "#FF9800", self.open_payment)
         self.month_revenue_card.pack(side="left", padx=5, expand=True, fill="x")
 
-        self.total_revenue_card = self.create_stat_card(revenue_row, "💰", "Total Revenue", "Le 0", "#9C27B0")
+        self.total_revenue_card = self.create_stat_card(revenue_row, "💰", "Total Revenue", "Le 0", "#9C27B0", self.open_payment)
         self.total_revenue_card.pack(side="left", padx=5, expand=True, fill="x")
 
         # ==============================
@@ -441,7 +441,7 @@ class AdminDashboard(ctk.CTk):
     # Helper Methods
     # ==============================
 
-    def create_stat_card(self, parent, icon, title, value, color):
+    def create_stat_card(self, parent, icon, title, value, color, command=None):
         """Create a statistics card with a clean left accent bar to look professional."""
         card = ctk.CTkFrame(parent, corner_radius=10)
         
@@ -467,6 +467,17 @@ class AdminDashboard(ctk.CTk):
         value_label.pack(fill="x", pady=(2, 5))
         
         card.value_label = value_label
+
+        if command:
+            card.configure(cursor="hand2")
+            card.bind("<Button-1>", lambda e: command())
+            accent_bar.bind("<Button-1>", lambda e: command())
+            content_frame.bind("<Button-1>", lambda e: command())
+            header_frame.bind("<Button-1>", lambda e: command())
+            icon_label.bind("<Button-1>", lambda e: command())
+            title_label.bind("<Button-1>", lambda e: command())
+            value_label.bind("<Button-1>", lambda e: command())
+
         return card
 
     def create_recent_table_frame(self, parent, title):
