@@ -318,6 +318,10 @@ class UserManagementWindow(ctk.CTkToplevel):
                 conn.close()
                 return
 
+            query = """
+                INSERT INTO Users (FullName, username, Password, Role, Email, Phone, Gender, Status)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            """
             cursor.execute(query, (fullname, username, password, role, email, phone, gender, status))
             new_users_id = cursor.lastrowid
 
@@ -370,6 +374,11 @@ class UserManagementWindow(ctk.CTkToplevel):
                 conn.close()
                 return
 
+            query = """
+                UPDATE Users
+                SET FullName = %s, username = %s, Role = %s, Email = %s, Phone = %s, Gender = %s, Status = %s
+                WHERE UsersID = %s
+            """
             cursor.execute(query, (fullname, username, role, email, phone, gender, status, self.selected_user_id))
 
             # Sync with Health_Workers table
