@@ -2,6 +2,7 @@ import customtkinter as ctk
 from tkinter import ttk, messagebox
 from datetime import datetime
 from database import connect_db
+import os
 
 ctk.set_appearance_mode("Light")
 ctk.set_default_color_theme("blue")
@@ -18,10 +19,11 @@ class PharmacistDashboard(ctk.CTk):
 
         self.pharmacist_user = pharmacist_user or {
             "user_id": 5,
-            "worker_id": 7,
+            "worker_id": 5,
             "full_name": "Pharmacist Staff",
             "role": "Pharmacist"
         }
+        self.pharmacist_worker_id = self.pharmacist_user.get("worker_id", 5)
 
         # Main container
         self.main_container = ctk.CTkFrame(self)
@@ -44,7 +46,6 @@ class PharmacistDashboard(ctk.CTk):
         menu_items = [
             ("🏠 Dashboard", self.refresh_dashboard),
             ("📦 Inventory", self.open_inventory),
-            ("💊 Treatments / Rx", self.open_treatments),
             ("⚡ Dispense Medicine", self.open_dispensing),
             ("🚪 Logout", self.logout)
         ]
@@ -86,7 +87,7 @@ class PharmacistDashboard(ctk.CTk):
         self.header_frame = ctk.CTkFrame(self.scrollable_frame)
         self.header_frame.pack(fill="x", pady=(0, 10))
 
-        welcome_text = f"👋 Welcome, {self.pharmacist_user['full_name']} (Pharmacist)"
+        welcome_text = f"👋 Welcome Pharmacist, {self.pharmacist_user['full_name']}"
         self.welcome_lbl = ctk.CTkLabel(
             self.header_frame,
             text=welcome_text,
@@ -117,9 +118,7 @@ class PharmacistDashboard(ctk.CTk):
 
         self.update_clock()
 
-        # ==============================
         # Clickable Stat Cards
-        # ==============================
         self.cards_frame = ctk.CTkFrame(self.scrollable_frame)
         self.cards_frame.pack(fill="x", pady=10)
 
@@ -146,58 +145,26 @@ class PharmacistDashboard(ctk.CTk):
         )
         self.prescriptions_card.pack(side="left", padx=5, expand=True, fill="x")
 
-        # ==============================
-        # Quick Actions
-        # ==============================
-        self.actions_frame = ctk.CTkFrame(self.scrollable_frame)
-        self.actions_frame.pack(fill="x", pady=10)
+        # Table showing Active Stock
+        self.stock_frame = ctk.CTkFrame(self.scrollable_frame)
+        self.stock_frame.pack(fill="both", expand=True, pady=15)
 
-        ctk.CTkLabel(self.actions_frame, text="⚡ Quick Action Center", font=("Arial", 16, "bold")).pack(pady=10)
+        ctk.CTkLabel(self.stock_frame, text="📋 Current Pharmaceutical Stock Status", font=("Arial", 16, "bold"), text_color="#1F6AA5").pack(anchor="w", padx=20, pady=10)
 
-        actions_row = ctk.CTkFrame(self.actions_frame, fg_color="transparent")
-        actions_row.pack(fill="x", padx=10, pady=10)
+        container = ctk.CTkFrame(self.stock_frame, fg_color="transparent")
+        container.pack(fill="both", expand=True, padx=20, pady=10)
 
-        actions = [
-            ("📦 Manage Inventory", self.open_inventory),
-            ("📋 View Prescriptions", self.open_treatments),
-            ("⚡ Dispense Medicine", self.open_dispensing)
-        ]
+        scrollbar = ttk.Scrollbar(container)
+        scrollbar.pack(side="right", fill="y")
 
-        for text, command in actions:
-            btn = ctk.CTkButton(
-                actions_row,
-                text=text,
-                width=220,
-                height=45,
-                font=("Arial", 13, "bold"),
-                command=command
-            )
-            btn.pack(side="left", padx=25, expand=True)
+        columns = ("Medicine Name", "Batch Number", "Quantity In Stock", "Selling Price", "Expiry Date", "Supplier")
+        self.stock_table = ttk.Treeview(container, columns=columns, show="headings", yscrollcommand=scrollbar.set, height=12)
+        for col in columns:
+            self.stock_table.heading(col, text=col, anchor="w")
+            self.stock_table.column(col, anchor="w", width=200)
+        self.stock_table.pack(side="left", fill="both", expand=True)
+        scrollbar.config(command=self.stock_table.yview)
 
-        # ==============================
-        # Splitted Treeviews Section
-        # ==============================
-        self.data_split_frame = ctk.CTkFrame(self.scrollable_frame, fg_color="transparent")
-        self.data_split_frame.pack(fill="x", pady=10)
-
-        # Left Column: Low Stock & Expired
-        self.left_col = ctk.CTkFrame(self.data_split_frame, fg_color="transparent")
-        self.left_col.pack(side="left", fill="both", expand=True, padx=(0, 5))
-
-        self.low_stock_table_frame = self.create_table_frame(self.left_col, "⚠️ Low Stock Alert (Stock < 10)", ("Item Name", "Stock"))
-        self.low_stock_table_frame.pack(fill="both", expand=True, pady=(0, 10))
-
-        self.expired_table_frame = self.create_table_frame(self.left_col, "🚨 Expired Medicines Alert", ("Item Name", "Expiry Date"))
-        self.expired_table_frame.pack(fill="both", expand=True)
-
-        # Right Column: Recent Prescriptions
-        self.right_col = ctk.CTkFrame(self.data_split_frame, fg_color="transparent")
-        self.right_col.pack(side="right", fill="both", expand=True, padx=(5, 0))
-
-        self.treatments_table_frame = self.create_table_frame(self.right_col, "💊 Recent Prescriptions", ("ID", "Patient", "Medicine", "Dosage", "Dispense Status"))
-        self.treatments_table_frame.pack(fill="both", expand=True)
-
-        # Load statistics & data list
         self.refresh_dashboard()
 
     def update_clock(self):
@@ -205,7 +172,7 @@ class PharmacistDashboard(ctk.CTk):
         self.after(1000, self.update_clock)
 
     def create_stat_card(self, parent, icon, title, value, color, command=None):
-        card = ctk.CTkFrame(parent, corner_radius=10)
+        card = ctk.CTkFrame(parent, corner_radius=10, cursor="hand2" if command else None)
         accent_bar = ctk.CTkFrame(card, width=5, corner_radius=2, fg_color=color)
         accent_bar.pack(side="left", fill="y", padx=(10, 5), pady=10)
 
@@ -221,117 +188,75 @@ class PharmacistDashboard(ctk.CTk):
         title_label = ctk.CTkLabel(header_frame, text=f"  {title}", font=("Arial", 11, "bold"), text_color=("#4A5568", "#CBD5E0"))
         title_label.pack(side="left")
 
-        value_label = ctk.CTkLabel(content_frame, text=value, font=("Arial", 22, "bold"), text_color="#1F6AA5", anchor="w")
-        value_label.pack(fill="x", pady=(2, 5))
-
-        card.value_label = value_label
+        value_label = ctk.CTkLabel(content_frame, text=value, font=("Arial", 20, "bold"), text_color="#1F6AA5")
+        value_label.pack(anchor="w", padx=5, pady=(2, 5))
 
         if command:
-            card.configure(cursor="hand2")
             card.bind("<Button-1>", lambda e: command())
-            accent_bar.bind("<Button-1>", lambda e: command())
-            content_frame.bind("<Button-1>", lambda e: command())
-            header_frame.bind("<Button-1>", lambda e: command())
             icon_label.bind("<Button-1>", lambda e: command())
             title_label.bind("<Button-1>", lambda e: command())
             value_label.bind("<Button-1>", lambda e: command())
-
+            
+        card.value_label = value_label
         return card
 
-    def create_table_frame(self, parent, title, columns):
-        frame = ctk.CTkFrame(parent)
-        ctk.CTkLabel(frame, text=title, font=("Arial", 14, "bold"), text_color="#1F6AA5").pack(pady=5)
-
-        style = ttk.Style()
-        style.theme_use("clam")
-        style.configure(
-            "Treeview",
-            background="#2b2b2b",
-            foreground="white",
-            fieldbackground="#2b2b2b",
-            rowheight=30,
-            font=("Arial", 11)
-        )
-        style.map("Treeview", background=[("selected", "#1F6AA5")], foreground=[("selected", "white")])
-
-        table = ttk.Treeview(frame, columns=columns, show="headings", height=6)
-        for col in columns:
-            table.heading(col, text=col, anchor="center")
-            table.column(col, width=100, anchor="center")
-
-        v_scroll = ttk.Scrollbar(frame, orient="vertical", command=table.yview)
-        table.configure(yscrollcommand=v_scroll.set)
-
-        table.pack(side="left", fill="both", expand=True)
-        v_scroll.pack(side="right", fill="y")
-
-        frame.table = table
-        return frame
-
     def refresh_dashboard(self):
+        self.load_dashboard_statistics()
+        self.load_stock_table()
+
+    def load_dashboard_statistics(self):
         try:
             conn = connect_db()
             cursor = conn.cursor()
-
-            # Stats
+            
+            # Total medicine kinds
             cursor.execute("SELECT COUNT(*) FROM Inventory")
             self.inventory_card.value_label.configure(text=str(cursor.fetchone()[0]))
 
-            cursor.execute("SELECT COUNT(*) FROM Inventory WHERE Stock < 10")
+            # Low stock items (< 10 units)
+            cursor.execute("SELECT COUNT(*) FROM Inventory WHERE Quantity < 10")
             self.low_stock_card.value_label.configure(text=str(cursor.fetchone()[0]))
 
+            # Expired medicines
             cursor.execute("SELECT COUNT(*) FROM Inventory WHERE ExpiryDate < CURDATE()")
             self.expired_card.value_label.configure(text=str(cursor.fetchone()[0]))
 
-            cursor.execute("SELECT COUNT(*) FROM Treatment WHERE DispensedStatus = 'Pending'")
+            # Pending dispenses
+            cursor.execute("SELECT COUNT(*) FROM Prescription WHERE Status = 'Pending'")
             self.prescriptions_card.value_label.configure(text=str(cursor.fetchone()[0]))
-
-            # Low Stock Table
-            ls_table = self.low_stock_table_frame.table
-            for item in ls_table.get_children():
-                ls_table.delete(item)
-            cursor.execute("SELECT ItemName, Stock FROM Inventory WHERE Stock < 10 LIMIT 5")
-            for row in cursor.fetchall():
-                ls_table.insert("", "end", values=row)
-
-            # Expired Table
-            ex_table = self.expired_table_frame.table
-            for item in ex_table.get_children():
-                ex_table.delete(item)
-            cursor.execute("SELECT ItemName, ExpiryDate FROM Inventory WHERE ExpiryDate < CURDATE() LIMIT 5")
-            for row in cursor.fetchall():
-                ex_table.insert("", "end", values=(row[0], str(row[1])))
-
-            # Prescriptions Table
-            t_table = self.treatments_table_frame.table
-            for item in t_table.get_children():
-                t_table.delete(item)
-            cursor.execute("""
-                SELECT t.TreatmentID, p.FullName, t.TreatmentName, t.Dosage, t.DispensedStatus
-                FROM Treatment t
-                LEFT JOIN Patients p ON t.PatientID = p.PatientID
-                ORDER BY t.TreatmentID DESC LIMIT 5
-            """)
-            for row in cursor.fetchall():
-                t_table.insert("", "end", values=row)
 
             conn.close()
         except Exception as e:
-            print(f"Error loading pharmacist dashboard: {e}")
+            print(f"Error loading stats: {e}")
+
+    def load_stock_table(self):
+        for item in self.stock_table.get_children():
+            self.stock_table.delete(item)
+        try:
+            conn = connect_db()
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT MedicineName, BatchNumber, Quantity, SellingPrice, ExpiryDate, Supplier
+                FROM Inventory
+                ORDER BY MedicineName ASC
+            """)
+            for row in cursor.fetchall():
+                cleaned = ["" if val is None else str(val) for val in row]
+                cleaned[3] = f"Le {float(cleaned[3]):,.2f}" if cleaned[3] else "Le 0.00"
+                self.stock_table.insert("", "end", values=cleaned)
+            conn.close()
+        except Exception as e:
+            print(f"Error loading stock: {e}")
 
     def open_inventory(self):
         from inventory import InventoryWindow
         InventoryWindow(self)
 
-    def open_treatments(self):
-        from treatment import TreatmentWindow
-        TreatmentWindow(self)
-
     def open_dispensing(self):
         MedicineDispensingWindow(self)
 
     def logout(self):
-        confirm = messagebox.askyesno("Confirm Logout", "Are you sure you want to log out?")
+        confirm = messagebox.askyesno("Confirm Logout", "Are you sure you want to sign out from the Pharmacist Panel?")
         if confirm:
             self.destroy()
             from login import LoginApp
@@ -344,10 +269,13 @@ class MedicineDispensingWindow(ctk.CTkToplevel):
 
     def __init__(self, parent):
         super().__init__(parent)
+        self.master = parent
 
         self.title("Pharmacy Medicine Dispensing Portal")
-        self.geometry("1100x650")
+        self.geometry("1200x700")
         self.resizable(True, True)
+        self.transient(parent)
+        self.grab_set()
 
         # Title
         ctk.CTkLabel(
@@ -372,14 +300,12 @@ class MedicineDispensingWindow(ctk.CTkToplevel):
             text_color="#1F6AA5"
         ).pack(anchor="w", padx=10, pady=5)
 
-        columns = ("Treatment ID", "Patient Name", "Prescribed Medicine", "Dosage", "Duration", "Doctor")
+        columns = ("Prescription ID", "Patient Name", "Prescribed Medicine", "Dosage", "Qty", "Doctor", "Date")
         self.table = ttk.Treeview(self.table_frame, columns=columns, show="headings", height=12)
         
         # Style
         style = ttk.Style()
-        style.theme_use("clam")
-        style.configure("Treeview", background="#2b2b2b", foreground="white", fieldbackground="#2b2b2b", rowheight=32, font=("Arial", 11))
-        style.map("Treeview", background=[("selected", "#1F6AA5")], foreground=[("selected", "white")])
+        style.configure("Treeview", font=("Arial", 11), rowheight=28)
 
         for col in columns:
             self.table.heading(col, text=col, anchor="center")
@@ -417,7 +343,6 @@ class MedicineDispensingWindow(ctk.CTkToplevel):
         )
         self.info_lbl.pack(side="left", padx=20, pady=15)
 
-        # Load data
         self.load_pending_prescriptions()
 
     def load_pending_prescriptions(self):
@@ -428,12 +353,12 @@ class MedicineDispensingWindow(ctk.CTkToplevel):
             conn = connect_db()
             cursor = conn.cursor()
             query = """
-                SELECT t.TreatmentID, p.FullName, t.TreatmentName, t.Dosage, t.Duration, hw.FullName
-                FROM Treatment t
-                LEFT JOIN Patients p ON t.PatientID = p.PatientID
-                LEFT JOIN Health_Workers hw ON t.WorkerID = hw.WorkerID
-                WHERE t.DispensedStatus = 'Pending'
-                ORDER BY t.TreatmentID DESC
+                SELECT pr.PrescriptionID, p.FullName, pr.MedicineName, pr.Dosage, pr.QuantityPrescribed, hw.FullName, DATE(pr.DatePrescribed)
+                FROM Prescription pr
+                LEFT JOIN Patients p ON pr.PatientID = p.PatientID
+                LEFT JOIN Health_Workers hw ON pr.DoctorID = hw.WorkerID
+                WHERE pr.Status = 'Pending'
+                ORDER BY pr.PrescriptionID DESC
             """
             cursor.execute(query)
             for row in cursor.fetchall():
@@ -448,7 +373,7 @@ class MedicineDispensingWindow(ctk.CTkToplevel):
         if selected:
             self.dispense_btn.configure(state="normal", fg_color="#4CAF50")
             row = self.table.item(selected[0], "values")
-            self.info_lbl.configure(text=f"Selected: {row[2]} for {row[1]}")
+            self.info_lbl.configure(text=f"Selected: {row[2]} (Qty: {row[4]}) for {row[1]}")
         else:
             self.dispense_btn.configure(state="disabled", fg_color="gray")
             self.info_lbl.configure(text="Select a pending prescription from the table to dispense.")
@@ -459,13 +384,14 @@ class MedicineDispensingWindow(ctk.CTkToplevel):
             return
 
         row = self.table.item(selected[0], "values")
-        treatment_id = row[0]
-        medicine_name = row[2]
+        prescription_id = row[0]
         patient_name = row[1]
+        medicine_name = row[2]
+        qty_prescribed = int(row[4])
 
         confirm = messagebox.askyesno(
             "Dispense Medicine",
-            f"Are you sure you want to dispense '{medicine_name}' to {patient_name}?"
+            f"Are you sure you want to dispense {qty_prescribed} unit(s) of '{medicine_name}' to {patient_name}?"
         )
         if not confirm:
             return
@@ -475,52 +401,108 @@ class MedicineDispensingWindow(ctk.CTkToplevel):
             cursor = conn.cursor()
 
             # 1. Look up the medicine in Inventory
-            # Match case-insensitively
-            cursor.execute("SELECT InventoryID, Stock, Quantity FROM Inventory WHERE LOWER(ItemName) = LOWER(%s)", (medicine_name,))
+            cursor.execute("""
+                SELECT InventoryID, Quantity, SellingPrice 
+                FROM Inventory 
+                WHERE LOWER(MedicineName) = LOWER(%s) AND Quantity > 0 
+                LIMIT 1
+            """, (medicine_name,))
             inv_row = cursor.fetchone()
 
             if not inv_row:
                 messagebox.showerror(
                     "Dispense Error",
-                    f"The prescribed medicine '{medicine_name}' was not found in the Inventory.\n"
-                    "Please add it to the inventory first."
+                    f"The prescribed medicine '{medicine_name}' is currently OUT OF STOCK.\n"
+                    "Please contact the Administrator to restock."
                 )
                 conn.close()
                 return
 
-            inv_id, stock, total_qty = inv_row
+            inv_id, current_qty, selling_price = inv_row
 
-            # 2. Check stock level
-            if stock <= 0:
+            # 2. Check if inventory has enough stock
+            if current_qty < qty_prescribed:
                 messagebox.showerror(
                     "Dispense Error",
-                    f"Out of Stock! '{medicine_name}' has 0 units remaining."
+                    f"Insufficient Stock! '{medicine_name}' only has {current_qty} unit(s) in stock.\n"
+                    f"Required: {qty_prescribed} unit(s)."
                 )
                 conn.close()
                 return
 
-            # 3. Decrement stock
-            new_stock = stock - 1
-            cursor.execute("UPDATE Inventory SET Stock = %s WHERE InventoryID = %s", (new_stock, inv_id))
+            # 3. Decrement Quantity in Inventory
+            new_qty = current_qty - qty_prescribed
+            cursor.execute("UPDATE Inventory SET Quantity = %s WHERE InventoryID = %s", (new_qty, inv_id))
 
-            # 4. Update Treatment Status to 'Dispensed'
-            cursor.execute("UPDATE Treatment SET DispensedStatus = 'Dispensed' WHERE TreatmentID = %s", (treatment_id,))
+            # 4. Record details in Medicine_Dispensing table
+            cursor.execute("""
+                INSERT INTO Medicine_Dispensing (PrescriptionID, InventoryID, QuantityDispensed, DispensedDate, PharmacistID)
+                VALUES (%s, %s, %s, CURRENT_TIMESTAMP, %s)
+            """, (prescription_id, inv_id, qty_prescribed, self.master.pharmacist_worker_id))
+            dispensing_id = cursor.lastrowid
+
+            # 5. Update Prescription Status to 'Dispensed'
+            cursor.execute("UPDATE Prescription SET Status = 'Dispensed' WHERE PrescriptionID = %s", (prescription_id,))
+
+            # 6. Retrieve PatientID from Prescription
+            cursor.execute("SELECT PatientID FROM Prescription WHERE PrescriptionID = %s", (prescription_id,))
+            patient_id = cursor.fetchone()[0]
+
+            # 7. Create Payment record for Medicines
+            total_amount = qty_prescribed * float(selling_price)
+            cursor.execute("""
+                INSERT INTO Payment (PatientID, Amount, PaymentType, ServiceID, LabRequestID, DispensingID, PaymentMethod, PaymentDate, BilledBy)
+                VALUES (%s, %s, 'Medicines', NULL, NULL, %s, 'Pending', CURRENT_TIMESTAMP, %s)
+            """, (patient_id, total_amount, dispensing_id, self.master.pharmacist_worker_id))
+            payment_id = cursor.lastrowid
+
+            # 8. Create Receipt record (prints medicine receipt)
+            cursor.execute("""
+                INSERT INTO Receipt (PaymentID, IssueDate, PrintedBy)
+                VALUES (%s, CURRENT_TIMESTAMP, %s)
+            """, (payment_id, self.master.pharmacist_worker_id))
+            receipt_id = cursor.lastrowid
 
             conn.commit()
             conn.close()
-
-            messagebox.showinfo("Success", f"Successfully dispensed 1 unit of '{medicine_name}' for {patient_name}.\nRemaining Stock: {new_stock}")
+ 
+            # Write audit logs
+            user_id = self.master.pharmacist_user.get("user_id", 1)
+            from database import log_audit_action
+            log_audit_action(user_id, f"Dispensed {qty_prescribed} unit(s) of '{medicine_name}' (DispensingID: {dispensing_id}) for PatientID: {patient_id}")
+            log_audit_action(user_id, f"Created medicine payment of Le {total_amount:,.2f} for PatientID: {patient_id} (PaymentID: {payment_id})")
+            log_audit_action(user_id, f"Generated medicine receipt (ReceiptID: {receipt_id}) for PatientID: {patient_id}")
+ 
+            messagebox.showinfo(
+                "Success", 
+                f"Dispensed successfully!\n"
+                f"Medicine: {medicine_name}\n"
+                f"Quantity: {qty_prescribed} units\n"
+                f"Remaining Stock: {new_qty} units\n"
+                f"Receipt ID generated: #{receipt_id}"
+            )
             
-            # Reload list and refresh pharmacist dashboard stats
+            # Ask to print receipt
+            print_confirm = messagebox.askyesno("Print Receipt", "Would you like to print/export the Medicine Receipt now?")
+            if print_confirm:
+                self.open_receipt_print_dialog(receipt_id)
+
+            # Reload lists and stats
             self.load_pending_prescriptions()
             self.dispense_btn.configure(state="disabled", fg_color="gray")
             self.info_lbl.configure(text="Select a pending prescription from the table to dispense.")
             
-            if hasattr(self.master, "refresh_dashboard"):
-                self.master.refresh_dashboard()
+            self.master.refresh_dashboard()
 
         except Exception as e:
             messagebox.showerror("Dispense Error", f"Failed to complete dispensing process:\n{e}")
+
+    def open_receipt_print_dialog(self, receipt_id):
+        # We can import and trigger receipt PDF popup directly
+        from receipt import ReceiptWindow
+        r_win = ReceiptWindow(self)
+        r_win.selected_receipt_id = receipt_id
+        r_win.load_selected_receipt_details(receipt_id)
 
 
 if __name__ == "__main__":

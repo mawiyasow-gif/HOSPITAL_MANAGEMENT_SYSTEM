@@ -2,46 +2,44 @@ import customtkinter as ctk
 from tkinter import ttk, messagebox, filedialog
 from datetime import datetime
 from database import connect_db
+import session
 import os
 
 # Try to import reportlab for PDF generation
 try:
     from reportlab.lib.pagesizes import letter
     from reportlab.lib import colors
-    from reportlab.lib.styles import getSampleStyleSheet
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
     from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
-    from reportlab.lib.enums import TA_CENTER, TA_LEFT
+    from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
     PDF_AVAILABLE = True
 except ImportError:
     PDF_AVAILABLE = False
 
-# -----------------------------
-# CustomTkinter Settings
-# -----------------------------
 ctk.set_appearance_mode("Light")
 ctk.set_default_color_theme("blue")
 
-
 class ReceiptWindow(ctk.CTkToplevel):
-    """Receipt Management Window for the Physical Health Clinic Record System."""
+    """Receipt Management & Professional PDF Generation Window."""
 
     def __init__(self, parent):
         super().__init__(parent)
 
-        self.title("🧾 Receipt Management")
+        self.title("🧾 Receipt & Billing Management")
         self.geometry("1500x850")
         self.resizable(True, True)
+        self.transient(parent)
+        self.grab_set()
 
-        # Track selected receipt ID
         self.selected_receipt_id = None
-
-        # Store payment details for selected payment
         self.selected_payment_data = None
 
-        # ==============================
-        # Back Button
-        # ==============================
+        # Check current user worker id
+        self.worker_id = 1
+        if hasattr(session, "current_user") and session.current_user:
+            self.worker_id = session.current_user.get("worker_id", 1)
 
+        # Back Button
         back_btn = ctk.CTkButton(
             self,
             text="⬅ Back",
@@ -50,495 +48,268 @@ class ReceiptWindow(ctk.CTkToplevel):
         )
         back_btn.place(x=20, y=20)
 
-        # ==============================
         # Window Title
-        # ==============================
-
         title = ctk.CTkLabel(
             self,
-            text="🧾 Receipt Management",
+            text="🧾 Receipt & Billing Management",
             font=("Arial", 30, "bold")
         )
         title.pack(pady=20)
 
-        # ==============================
         # Main Frame
-        # ==============================
-
         main_frame = ctk.CTkFrame(self)
         main_frame.pack(fill="both", expand=True, padx=20, pady=20)
 
-        # ==============================
-        # Left Panel (Receipt Form)
-        # ==============================
-
+        # Left Panel (Form)
         form_frame = ctk.CTkFrame(main_frame, width=420)
         form_frame.pack(side="left", fill="y", padx=15, pady=15)
 
         ctk.CTkLabel(
             form_frame,
-            text="Receipt Information",
+            text="Receipt Operations",
             font=("Arial", 22, "bold")
         ).pack(pady=20)
 
         # Payment ComboBox
-        ctk.CTkLabel(
-            form_frame,
-            text="Select Payment:",
-            font=("Arial", 14)
-        ).pack(pady=(10, 2), anchor="w", padx=50)
-
+        ctk.CTkLabel(form_frame, text="Select Completed Payment:", font=("Arial", 13, "bold")).pack(pady=(10, 2), anchor="w", padx=50)
         self.payment_combo = ctk.CTkComboBox(form_frame, width=320, values=[])
         self.payment_combo.pack(pady=5)
         self.payment_combo.bind("<<ComboboxSelected>>", self.on_payment_selected)
 
-        # Receipt Number Entry (read-only)
-        ctk.CTkLabel(
-            form_frame,
-            text="Receipt Number:",
-            font=("Arial", 14)
-        ).pack(pady=(10, 2), anchor="w", padx=50)
-
-        self.receipt_number_entry = ctk.CTkEntry(
-            form_frame,
-            width=320,
-            placeholder_text="Auto-generated after saving"
-        )
+        # Receipt Number Entry
+        ctk.CTkLabel(form_frame, text="Receipt Number (Auto-assigned):", font=("Arial", 13, "bold")).pack(pady=(10, 2), anchor="w", padx=50)
+        self.receipt_number_entry = ctk.CTkEntry(form_frame, width=320, placeholder_text="RCP-XXXXXX")
         self.receipt_number_entry.pack(pady=5)
         self.receipt_number_entry.configure(state="disabled")
 
         # Issue Date Entry
-        ctk.CTkLabel(
-            form_frame,
-            text="Issue Date (YYYY-MM-DD):",
-            font=("Arial", 14)
-        ).pack(pady=(10, 2), anchor="w", padx=50)
-
-        self.issue_date_entry = ctk.CTkEntry(
-            form_frame,
-            width=320,
-            placeholder_text="Auto-filled with today's date"
-        )
+        ctk.CTkLabel(form_frame, text="Issue Date:", font=("Arial", 13, "bold")).pack(pady=(10, 2), anchor="w", padx=50)
+        self.issue_date_entry = ctk.CTkEntry(form_frame, width=320, placeholder_text="YYYY-MM-DD")
         self.issue_date_entry.pack(pady=5)
 
-        # Total Amount Entry (read-only)
-        ctk.CTkLabel(
-            form_frame,
-            text="Total Amount:",
-            font=("Arial", 14)
-        ).pack(pady=(10, 2), anchor="w", padx=50)
-
-        self.total_amount_entry = ctk.CTkEntry(
-            form_frame,
-            width=320,
-            placeholder_text="Auto-filled from payment"
-        )
+        # Total Amount Entry
+        ctk.CTkLabel(form_frame, text="Total Amount (Le):", font=("Arial", 13, "bold")).pack(pady=(10, 2), anchor="w", padx=50)
+        self.total_amount_entry = ctk.CTkEntry(form_frame, width=320)
         self.total_amount_entry.pack(pady=5)
         self.total_amount_entry.configure(state="disabled")
 
-        # ==============================
         # Action Buttons
-        # ==============================
+        btn_frame = ctk.CTkFrame(form_frame, fg_color="transparent")
+        btn_frame.pack(pady=25)
 
-        button_frame = ctk.CTkFrame(form_frame, fg_color="transparent")
-        button_frame.pack(pady=25)
+        ctk.CTkButton(btn_frame, text="➕ Generate Receipt", command=self.generate_receipt, width=155).grid(row=0, column=0, padx=5, pady=5)
+        ctk.CTkButton(btn_frame, text="👁 Preview Text", command=self.print_receipt, width=155).grid(row=0, column=1, padx=5, pady=5)
+        ctk.CTkButton(btn_frame, text="📄 Export PDF Receipt", command=self.export_pdf, fg_color="#4CAF50", hover_color="#43A047", width=155).grid(row=1, column=0, padx=5, pady=5)
+        ctk.CTkButton(btn_frame, text="❌ Delete Receipt", command=self.delete_receipt, fg_color="red", hover_color="#b71c1c", width=155).grid(row=1, column=1, padx=5, pady=5)
+        ctk.CTkButton(btn_frame, text="🧹 Clear Fields", command=self.clear_fields, width=320).grid(row=2, column=0, columnspan=2, padx=5, pady=5)
 
-        ctk.CTkButton(
-            button_frame,
-            text="➕ Generate Receipt",
-            width=140,
-            command=self.generate_receipt
-        ).grid(row=0, column=0, padx=5, pady=5)
+        # Right Panel (List)
+        self.table_frame = ctk.CTkFrame(main_frame)
+        self.table_frame.pack(side="right", fill="both", expand=True, padx=15, pady=15)
 
-        ctk.CTkButton(
-            button_frame,
-            text="✏️ Update",
-            width=140,
-            command=self.update_receipt
-        ).grid(row=0, column=1, padx=5, pady=5)
+        # Search Bar
+        search_frame = ctk.CTkFrame(self.table_frame, fg_color="transparent")
+        search_frame.pack(fill="x", padx=15, pady=10)
 
-        ctk.CTkButton(
-            button_frame,
-            text="❌ Delete",
-            width=140,
-            command=self.delete_receipt
-        ).grid(row=1, column=0, padx=5, pady=5)
+        self.search_entry = ctk.CTkEntry(search_frame, placeholder_text="Search by Patient Name or Receipt ID...", width=300)
+        self.search_entry.pack(side="left")
+        self.search_entry.bind("<KeyRelease>", self.search_receipt)
 
-        ctk.CTkButton(
-            button_frame,
-            text="🧹 Clear",
-            width=140,
-            command=self.clear_fields
-        ).grid(row=1, column=1, padx=5, pady=5)
+        ctk.CTkButton(search_frame, text="Search", command=self.search_receipt, width=100).pack(side="left", padx=10)
+        ctk.CTkButton(search_frame, text="Reset", command=self.refresh_table, width=100).pack(side="left")
 
-        ctk.CTkButton(
-            button_frame,
-            text="🖨️ Print Receipt",
-            width=140,
-            command=self.print_receipt
-        ).grid(row=2, column=0, padx=5, pady=5)
+        # Summary count/revenue labels
+        self.summary_frame = ctk.CTkFrame(self.table_frame, height=40, fg_color="transparent")
+        self.summary_frame.pack(fill="x", padx=15)
+        self.count_label = ctk.CTkLabel(self.summary_frame, text="Total Receipts: 0", font=("Arial", 12, "bold"))
+        self.count_label.pack(side="left", padx=10)
+        self.revenue_label = ctk.CTkLabel(self.summary_frame, text="Total Revenue: Le 0.00", font=("Arial", 12, "bold"), text_color="#1F6AA5")
+        self.revenue_label.pack(side="right", padx=10)
 
-        ctk.CTkButton(
-            button_frame,
-            text="💾 Export PDF",
-            width=140,
-            command=self.export_pdf
-        ).grid(row=2, column=1, padx=5, pady=5)
+        # Treeview setup
+        container = ctk.CTkFrame(self.table_frame, fg_color="transparent")
+        container.pack(fill="both", expand=True, padx=15, pady=10)
 
-        # ==============================
-        # Right Panel (Treeview Table)
-        # ==============================
+        scrollbar = ttk.Scrollbar(container)
+        scrollbar.pack(side="right", fill="y")
 
-        table_frame = ctk.CTkFrame(main_frame)
-        table_frame.pack(side="right", fill="both", expand=True, padx=15, pady=15)
-
-        # Search bar at top of right panel
-        search_frame = ctk.CTkFrame(table_frame)
-        search_frame.pack(fill="x", pady=10)
-
-        ctk.CTkLabel(
-            search_frame,
-            text="🔍 Search:",
-            font=("Arial", 14)
-        ).pack(side="left", padx=10)
-
-        self.search_entry = ctk.CTkEntry(
-            search_frame,
-            width=300,
-            placeholder_text="Receipt ID, Patient Name, Payment ID, or Date"
-        )
-        self.search_entry.pack(side="left", padx=5)
-
-        ctk.CTkButton(
-            search_frame,
-            text="Search",
-            width=100,
-            command=self.search_receipt
-        ).pack(side="left", padx=5)
-
-        ctk.CTkButton(
-            search_frame,
-            text="🔄 Refresh",
-            width=100,
-            command=self.refresh_table
-        ).pack(side="left", padx=5)
-
-        # Receipt count label
-        self.count_label = ctk.CTkLabel(
-            search_frame,
-            text="Total Receipts: 0",
-            font=("Arial", 14, "bold"),
-            text_color="#1F6AA5"
-        )
-        self.count_label.pack(side="right", padx=20)
-
-        # Total revenue label
-        self.revenue_label = ctk.CTkLabel(
-            search_frame,
-            text="Total Revenue: Le 0",
-            font=("Arial", 14, "bold"),
-            text_color="#1F6AA5"
-        )
-        self.revenue_label.pack(side="right", padx=20)
-
-        # Treeview columns
-        columns = (
-            "Receipt ID",
-            "Payment ID",
-            "Patient Name",
-            "Issue Date",
-            "Total Amount"
-        )
-
-        # Style Treeview table (dark theme consistent with other modules)
-        style = ttk.Style()
-        style.theme_use("clam")
-        style.configure(
-            "Treeview",
-            background="#2b2b2b",
-            foreground="white",
-            fieldbackground="#2b2b2b",
-            rowheight=35,
-            font=("Arial", 13)
-        )
-        style.map(
-            "Treeview",
-            background=[("selected", "#1F6AA5")],
-            foreground=[("selected", "white")]
-        )
-        style.configure(
-            "Treeview.Heading",
-            background="#1f1f1f",
-            foreground="white",
-            font=("Arial", 14, "bold"),
-            relief="flat"
-        )
-        style.map(
-            "Treeview.Heading",
-            background=[("active", "#2d2d2d")]
-        )
-
-        # Create Treeview widget
+        columns = ("Receipt ID", "Payment ID", "Patient Name", "Total Amount", "Issue Date", "Issued By Staff")
         self.table = ttk.Treeview(
-            table_frame,
+            container,
             columns=columns,
             show="headings",
-            height=20
+            yscrollcommand=scrollbar.set,
+            height=15
         )
-
         for col in columns:
-            self.table.heading(col, text=col, anchor="center")
-            self.table.column(col, width=120, anchor="center")
+            self.table.heading(col, text=col, anchor="w")
+            self.table.column(col, anchor="w", width=140)
 
-        # Make Patient Name column wider
-        self.table.column("Patient Name", width=200, anchor="center")
-
-        # Vertical scrollbar
-        v_scrollbar = ttk.Scrollbar(
-            table_frame,
-            orient="vertical",
-            command=self.table.yview
-        )
-
-        # Horizontal scrollbar
-        h_scrollbar = ttk.Scrollbar(
-            table_frame,
-            orient="horizontal",
-            command=self.table.xview
-        )
-
-        self.table.configure(
-            yscrollcommand=v_scrollbar.set,
-            xscrollcommand=h_scrollbar.set
-        )
-
-        # Pack scrollbars and treeview
-        h_scrollbar.pack(side="bottom", fill="x")
         self.table.pack(side="left", fill="both", expand=True)
-        v_scrollbar.pack(side="right", fill="y")
+        scrollbar.config(command=self.table.yview)
 
-        # Bind row selection to populate the form
+        # Binds
         self.table.bind("<<TreeviewSelect>>", self.select_receipt)
 
-        # Load initial data into ComboBoxes and Treeview
+        # Load
         self.load_payments()
         self.load_receipts()
 
-    # ==============================
-    # Helper Methods
-    # ==============================
-
-    def extract_payment_id(self, combo_value):
-        """Extract the integer Payment ID from a ComboBox display string like 'Payment #1 - Alhaji Mawiya Sow - Le 1,000'."""
-        if not combo_value:
-            return None
+    def load_selected_receipt_details(self, receipt_id):
+        """Pre-load a specific receipt details directly and trigger preview."""
         try:
-            # Extract the number after "Payment #"
-            return int(combo_value.split("Payment #")[1].split(" - ")[0])
-        except (IndexError, ValueError):
-            return None
+            self.selected_receipt_id = receipt_id
+            conn = connect_db()
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT r.ReceiptID, r.PaymentID, p.Amount, r.IssueDate, p.PaymentMethod, pat.FullName
+                FROM Receipt r
+                JOIN Payment p ON r.PaymentID = p.PaymentID
+                JOIN Patients pat ON p.PatientID = pat.PatientID
+                WHERE r.ReceiptID = %s
+            """, (receipt_id,))
+            row = cursor.fetchone()
+            conn.close()
 
-    def on_payment_selected(self, event):
-        """Handle payment selection from ComboBox."""
-        payment_val = self.payment_combo.get()
-        payment_id = self.extract_payment_id(payment_val)
+            if row:
+                self.selected_payment_data = {
+                    'PaymentID': row[1],
+                    'Amount': row[2],
+                    'PaymentDate': row[3],
+                    'PaymentMethod': row[4],
+                    'PatientName': row[5]
+                }
+                self.receipt_number_entry.configure(state="normal")
+                self.receipt_number_entry.delete(0, "end")
+                self.receipt_number_entry.insert(0, f"RCP-{row[0]:06d}")
+                self.receipt_number_entry.configure(state="disabled")
+                
+                self.total_amount_entry.configure(state="normal")
+                self.total_amount_entry.delete(0, "end")
+                self.total_amount_entry.insert(0, f"Le {row[2]:,.2f}")
+                self.total_amount_entry.configure(state="disabled")
 
-        if payment_id:
-            # Load payment details
-            try:
-                conn = connect_db()
-                cursor = conn.cursor()
-                query = """
-                    SELECT 
-                        p.PaymentID,
-                        pat.FullName,
-                        p.Amount,
-                        p.PaymentDate,
-                        p.PaymentMethod
-                    FROM Payments p
-                    LEFT JOIN Patients pat ON p.PatientID = pat.PatientID
-                    WHERE p.PaymentID = %s
-                """
-                cursor.execute(query, (payment_id,))
-                row = cursor.fetchone()
-                conn.close()
+                self.issue_date_entry.delete(0, "end")
+                self.issue_date_entry.insert(0, str(row[3]))
 
-                if row:
-                    self.selected_payment_data = {
-                        'PaymentID': row[0],
-                        'PatientName': row[1],
-                        'Amount': row[2],
-                        'PaymentDate': row[3],
-                        'PaymentMethod': row[4]
-                    }
-
-                    # Auto-fill total amount
-                    self.total_amount_entry.configure(state="normal")
-                    self.total_amount_entry.delete(0, "end")
-                    self.total_amount_entry.insert(0, str(row[2]))
-                    self.total_amount_entry.configure(state="disabled")
-
-                    # Auto-fill today's date if empty
-                    if not self.issue_date_entry.get():
-                        today = datetime.now().strftime("%Y-%m-%d")
-                        self.issue_date_entry.delete(0, "end")
-                        self.issue_date_entry.insert(0, today)
-
-            except Exception as e:
-                messagebox.showerror("Database Error", f"Failed to load payment details:\n{e}")
-
-    # ==============================
-    # Data Loading Methods
-    # ==============================
+                # Automatically trigger preview box
+                self.print_receipt()
+        except Exception as e:
+            print(f"Error loading direct receipt: {e}")
 
     def load_payments(self):
-        """Load all payment records from the Payments table into the Payment ComboBox."""
         try:
             conn = connect_db()
             cursor = conn.cursor()
-            query = """
-                SELECT 
-                    p.PaymentID,
-                    pat.FullName,
-                    p.Amount
-                FROM Payments p
+            cursor.execute("""
+                SELECT p.PaymentID, pat.FullName, p.Amount
+                FROM Payment p
                 LEFT JOIN Patients pat ON p.PatientID = pat.PatientID
+                WHERE p.PaymentMethod <> 'Pending'
                 ORDER BY p.PaymentID DESC
-            """
-            cursor.execute(query)
-            rows = cursor.fetchall()
-
-            payment_list = []
-            for row in rows:
-                payment_list.append(f"Payment #{row[0]} - {row[1]} - Le {row[2]:,.2f}")
-
+            """)
+            payment_list = [f"Payment #{row[0]} - {row[1]} - Le {row[2]:,.2f}" for row in cursor.fetchall()]
             self.payment_combo.configure(values=payment_list)
             if payment_list:
                 self.payment_combo.set(payment_list[0])
             conn.close()
         except Exception as e:
-            messagebox.showerror("Database Error", f"Failed to load payments:\n{e}")
+            print(f"Error loading payments: {e}")
+
+    def on_payment_selected(self, event):
+        val = self.payment_combo.get()
+        if not val:
+            return
+        try:
+            payment_id = int(val.split("Payment #")[1].split(" - ")[0])
+            conn = connect_db()
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT p.PaymentID, pat.FullName, p.Amount, p.PaymentDate, p.PaymentMethod
+                FROM Payment p
+                LEFT JOIN Patients pat ON p.PatientID = pat.PatientID
+                WHERE p.PaymentID = %s
+            """, (payment_id,))
+            row = cursor.fetchone()
+            conn.close()
+
+            if row:
+                self.selected_payment_data = {
+                    'PaymentID': row[0],
+                    'PatientName': row[1],
+                    'Amount': row[2],
+                    'PaymentDate': row[3],
+                    'PaymentMethod': row[4]
+                }
+                self.total_amount_entry.configure(state="normal")
+                self.total_amount_entry.delete(0, "end")
+                self.total_amount_entry.insert(0, str(row[2]))
+                self.total_amount_entry.configure(state="disabled")
+
+                self.issue_date_entry.delete(0, "end")
+                self.issue_date_entry.insert(0, datetime.now().strftime("%Y-%m-%d"))
+        except Exception as e:
+            print(f"Error handling payment selection: {e}")
 
     def load_receipts(self):
-        """Fetch all receipt records from the database and populate the Treeview."""
-        # Clear existing items in the treeview
         for item in self.table.get_children():
             self.table.delete(item)
-
         try:
             conn = connect_db()
             cursor = conn.cursor()
-            query = """
-                SELECT 
-                    r.ReceiptID,
-                    r.PaymentID,
-                    pat.FullName AS PatientName,
-                    r.IssueDate,
-                    r.TotalAmount
-                FROM Receipts r
-                LEFT JOIN Payments p ON r.PaymentID = p.PaymentID
-                LEFT JOIN Patients pat ON p.PatientID = pat.PatientID
+            cursor.execute("""
+                SELECT r.ReceiptID, r.PaymentID, pat.FullName, p.Amount, r.IssueDate, hw.FullName
+                FROM Receipt r
+                JOIN Payment p ON r.PaymentID = p.PaymentID
+                JOIN Patients pat ON p.PatientID = pat.PatientID
+                LEFT JOIN Health_Workers hw ON r.PrintedBy = hw.WorkerID
                 ORDER BY r.ReceiptID DESC
-            """
-            cursor.execute(query)
+            """)
             rows = cursor.fetchall()
-
-            receipt_count = 0
-            total_revenue = 0.0
-
-            for row in rows:
-                receipt_count += 1
-                total_revenue += float(row[4])
-                cleaned_row = ["" if val is None else str(val) for val in row]
-                self.table.insert("", "end", values=cleaned_row)
-
-            # Update count and revenue labels
-            self.count_label.configure(text=f"Total Receipts: {receipt_count}")
-            self.revenue_label.configure(text=f"Total Revenue: Le {total_revenue:,.2f}")
-
             conn.close()
-        except Exception as e:
-            messagebox.showerror("Database Error", f"Failed to load receipts:\n{e}")
 
-    # ==============================
-    # CRUD Operations
-    # ==============================
+            count = 0
+            revenue = 0.0
+            for row in rows:
+                count += 1
+                revenue += float(row[3])
+                cleaned = ["" if val is None else str(val) for val in row]
+                cleaned[3] = f"Le {float(cleaned[3]):,.2f}"
+                self.table.insert("", "end", values=cleaned)
+                
+            self.count_label.configure(text=f"Total Receipts: {count}")
+            self.revenue_label.configure(text=f"Total Revenue: Le {revenue:,.2f}")
+        except Exception as e:
+            print(f"Error loading receipts: {e}")
 
     def generate_receipt(self):
-        """Generate a new receipt from the selected payment."""
-        payment_val = self.payment_combo.get()
-        payment_id = self.extract_payment_id(payment_val)
-        issue_date = self.issue_date_entry.get().strip()
-
-        # Validate payment selection
-        if not payment_id:
-            messagebox.showerror("Validation Error", "Please select a valid payment.")
+        val = self.payment_combo.get()
+        if not val:
+            messagebox.showerror("Error", "Please select a payment.")
             return
-
-        # Validate issue date
-        if not issue_date:
-            messagebox.showerror("Validation Error", "Please enter the issue date.")
-            return
-
-        # Validate date format (YYYY-MM-DD)
+        
         try:
-            datetime.strptime(issue_date, "%Y-%m-%d")
-        except ValueError:
-            messagebox.showerror(
-                "Validation Error",
-                "Invalid date format. Please use YYYY-MM-DD."
-            )
-            return
-
-        # Check if receipt already exists for this payment
-        try:
+            payment_id = int(val.split("Payment #")[1].split(" - ")[0])
+            issue_date = self.issue_date_entry.get().strip()
+            
+            # Check if receipt exists
             conn = connect_db()
             cursor = conn.cursor()
-            cursor.execute("SELECT ReceiptID FROM Receipts WHERE PaymentID = %s", (payment_id,))
-            existing = cursor.fetchone()
-            conn.close()
+            cursor.execute("SELECT ReceiptID FROM Receipt WHERE PaymentID = %s", (payment_id,))
+            exists = cursor.fetchone()
+            
+            if exists:
+                messagebox.showerror("Duplicate Warning", f"A receipt has already been generated for Payment #{payment_id}.")
+                conn.close()
+                return
 
-            if existing:
-                confirm = messagebox.askyesno(
-                    "Duplicate Receipt",
-                    f"A receipt already exists for Payment #{payment_id}.\n\n"
-                    "Do you want to generate a new receipt anyway?"
-                )
-                if not confirm:
-                    return
-        except Exception as e:
-            messagebox.showerror("Database Error", f"Failed to check for existing receipts:\n{e}")
-            return
-
-        # Get payment details
-        if not self.selected_payment_data:
-            self.on_payment_selected(None)
-
-        if not self.selected_payment_data:
-            messagebox.showerror("Error", "Could not retrieve payment details.")
-            return
-
-        try:
-            conn = connect_db()
-            cursor = conn.cursor()
-            query = """
-                INSERT INTO Receipts (PaymentID, IssueDate, TotalAmount)
+            cursor.execute("""
+                INSERT INTO Receipt (PaymentID, IssueDate, PrintedBy)
                 VALUES (%s, %s, %s)
-            """
-            cursor.execute(query, (
-                payment_id,
-                issue_date,
-                self.selected_payment_data['Amount']
-            ))
-            conn.commit()
+            """, (payment_id, issue_date, self.worker_id))
             receipt_id = cursor.lastrowid
+            conn.commit()
             conn.close()
-
-            # Display receipt number
-            self.receipt_number_entry.configure(state="normal")
-            self.receipt_number_entry.delete(0, "end")
-            self.receipt_number_entry.insert(0, f"RCP-{receipt_id:06d}")
-            self.receipt_number_entry.configure(state="disabled")
 
             messagebox.showinfo("Success", f"Receipt generated successfully!\nReceipt ID: {receipt_id}")
             self.load_receipts()
@@ -546,83 +317,55 @@ class ReceiptWindow(ctk.CTkToplevel):
         except Exception as e:
             messagebox.showerror("Database Error", f"Failed to generate receipt:\n{e}")
 
-    def update_receipt(self):
-        """Update the selected receipt record in the database."""
-        if not self.selected_receipt_id:
-            messagebox.showwarning(
-                "Selection Warning",
-                "Please select a receipt from the table to update."
-            )
+    def select_receipt(self, event):
+        selected = self.table.selection()
+        if not selected:
             return
+        row = self.table.item(selected[0], "values")
+        self.selected_receipt_id = row[0]
+        payment_id = row[1]
 
-        payment_val = self.payment_combo.get()
-        payment_id = self.extract_payment_id(payment_val)
-        issue_date = self.issue_date_entry.get().strip()
+        # Sync combo
+        vals = self.payment_combo.cget("values")
+        for v in vals:
+            if f"Payment #{payment_id}" in v:
+                self.payment_combo.set(v)
+                self.on_payment_selected(None)
+                break
 
-        # Validate payment selection
-        if not payment_id:
-            messagebox.showerror("Validation Error", "Please select a valid payment.")
-            return
+        self.receipt_number_entry.configure(state="normal")
+        self.receipt_number_entry.delete(0, "end")
+        self.receipt_number_entry.insert(0, f"RCP-{int(row[0]):06d}")
+        self.receipt_number_entry.configure(state="disabled")
 
-        # Validate issue date
-        if not issue_date:
-            messagebox.showerror("Validation Error", "Please enter the issue date.")
-            return
+        self.issue_date_entry.delete(0, "end")
+        self.issue_date_entry.insert(0, row[4])
 
-        # Validate date format
-        try:
-            datetime.strptime(issue_date, "%Y-%m-%d")
-        except ValueError:
-            messagebox.showerror(
-                "Validation Error",
-                "Invalid date format. Please use YYYY-MM-DD."
-            )
-            return
-
-        try:
-            conn = connect_db()
-            cursor = conn.cursor()
-            query = """
-                UPDATE Receipts
-                SET PaymentID = %s, IssueDate = %s, TotalAmount = %s
-                WHERE ReceiptID = %s
-            """
-            cursor.execute(query, (
-                payment_id,
-                issue_date,
-                self.selected_payment_data['Amount'] if self.selected_payment_data else 0,
-                self.selected_receipt_id
-            ))
-            conn.commit()
-            conn.close()
-
-            messagebox.showinfo("Success", "Receipt updated successfully!")
-            self.load_receipts()
-            self.clear_fields()
-        except Exception as e:
-            messagebox.showerror("Database Error", f"Failed to update receipt:\n{e}")
+    def clear_fields(self):
+        self.selected_receipt_id = None
+        self.selected_payment_data = None
+        self.receipt_number_entry.configure(state="normal")
+        self.receipt_number_entry.delete(0, "end")
+        self.receipt_number_entry.configure(state="disabled")
+        self.issue_date_entry.delete(0, "end")
+        self.total_amount_entry.configure(state="normal")
+        self.total_amount_entry.delete(0, "end")
+        self.total_amount_entry.configure(state="disabled")
+        self.table.selection_remove(self.table.selection())
 
     def delete_receipt(self):
-        """Delete the selected receipt record after user confirmation."""
         if not self.selected_receipt_id:
-            messagebox.showwarning(
-                "Selection Warning",
-                "Please select a receipt from the table to delete."
-            )
+            messagebox.showwarning("Warning", "Select a receipt to delete.")
             return
-
-        confirm = messagebox.askyesno(
-            "Confirm Delete",
-            "Are you sure you want to delete this receipt?"
-        )
+        
+        confirm = messagebox.askyesno("Confirm Delete", "Are you sure you want to delete this receipt?")
         if not confirm:
             return
 
         try:
             conn = connect_db()
             cursor = conn.cursor()
-            query = "DELETE FROM Receipts WHERE ReceiptID = %s"
-            cursor.execute(query, (self.selected_receipt_id,))
+            cursor.execute("DELETE FROM Receipt WHERE ReceiptID = %s", (self.selected_receipt_id,))
             conn.commit()
             conn.close()
 
@@ -632,335 +375,356 @@ class ReceiptWindow(ctk.CTkToplevel):
         except Exception as e:
             messagebox.showerror("Database Error", f"Failed to delete receipt:\n{e}")
 
-    def search_receipt(self):
-        """Search for receipts by Receipt ID, Patient Name, Payment ID, or Issue Date."""
-        search_query = self.search_entry.get().strip()
-
-        if not search_query:
-            messagebox.showwarning("Search Warning", "Please enter a search term.")
+    def search_receipt(self, event=None):
+        q = self.search_entry.get().strip()
+        if not q:
+            self.load_receipts()
             return
-
-        # Clear existing items in the treeview
+            
         for item in self.table.get_children():
             self.table.delete(item)
-
         try:
             conn = connect_db()
             cursor = conn.cursor()
-            query = """
-                SELECT 
-                    r.ReceiptID,
-                    r.PaymentID,
-                    pat.FullName AS PatientName,
-                    r.IssueDate,
-                    r.TotalAmount
-                FROM Receipts r
-                LEFT JOIN Payments p ON r.PaymentID = p.PaymentID
-                LEFT JOIN Patients pat ON p.PatientID = pat.PatientID
-                WHERE r.ReceiptID LIKE %s
-                   OR r.PaymentID LIKE %s
-                   OR pat.FullName LIKE %s
-                   OR r.IssueDate LIKE %s
+            cursor.execute("""
+                SELECT r.ReceiptID, r.PaymentID, pat.FullName, p.Amount, r.IssueDate, hw.FullName
+                FROM Receipt r
+                JOIN Payment p ON r.PaymentID = p.PaymentID
+                JOIN Patients pat ON p.PatientID = pat.PatientID
+                LEFT JOIN Health_Workers hw ON r.PrintedBy = hw.WorkerID
+                WHERE pat.FullName LIKE %s OR r.ReceiptID LIKE %s
                 ORDER BY r.ReceiptID DESC
-            """
-            like_val = f"%{search_query}%"
-            cursor.execute(query, (like_val, like_val, like_val, like_val))
+            """, (f"%{q}%", f"%{q}%"))
             rows = cursor.fetchall()
-
-            receipt_count = 0
-            total_revenue = 0.0
+            conn.close()
 
             for row in rows:
-                receipt_count += 1
-                total_revenue += float(row[4])
-                cleaned_row = ["" if val is None else str(val) for val in row]
-                self.table.insert("", "end", values=cleaned_row)
-
-            # Update count and revenue labels
-            self.count_label.configure(text=f"Found Receipts: {receipt_count}")
-            self.revenue_label.configure(text=f"Total Amount: Le {total_revenue:,.2f}")
-
-            conn.close()
+                cleaned = ["" if val is None else str(val) for val in row]
+                cleaned[3] = f"Le {float(cleaned[3]):,.2f}"
+                self.table.insert("", "end", values=cleaned)
         except Exception as e:
-            messagebox.showerror("Database Error", f"Failed to search receipts:\n{e}")
-
-    def select_receipt(self, event):
-        """Load the selected receipt from the Treeview into the form fields."""
-        selected_item = self.table.selection()
-        if not selected_item:
-            return
-
-        row_values = self.table.item(selected_item[0], "values")
-        self.selected_receipt_id = row_values[0]
-
-        # Set the Payment ComboBox to match the selected row
-        payment_id = row_values[1]
-        payment_values = self.payment_combo.cget("values")
-        for val in payment_values:
-            if f"Payment #{payment_id}" in val:
-                self.payment_combo.set(val)
-                break
-
-        # Load payment details
-        self.on_payment_selected(None)
-
-        # Set the Receipt Number
-        self.receipt_number_entry.configure(state="normal")
-        self.receipt_number_entry.delete(0, "end")
-        self.receipt_number_entry.insert(0, f"RCP-{row_values[0]}")
-        self.receipt_number_entry.configure(state="disabled")
-
-        # Set the Issue Date
-        self.issue_date_entry.delete(0, "end")
-        self.issue_date_entry.insert(0, row_values[3])
-
-    def clear_fields(self):
-        """Clear all form fields and reset the ComboBoxes and Treeview selection."""
-        self.selected_receipt_id = None
-        self.selected_payment_data = None
-
-        # Clear the Issue Date field
-        self.issue_date_entry.delete(0, "end")
-
-        # Clear the search entry
-        self.search_entry.delete(0, "end")
-
-        # Clear the Receipt Number
-        self.receipt_number_entry.configure(state="normal")
-        self.receipt_number_entry.delete(0, "end")
-        self.receipt_number_entry.configure(state="disabled")
-
-        # Clear the Total Amount
-        self.total_amount_entry.configure(state="normal")
-        self.total_amount_entry.delete(0, "end")
-        self.total_amount_entry.configure(state="disabled")
-
-        # Remove Treeview selection highlight
-        self.table.selection_remove(self.table.selection())
-
-        # Reset the Payment ComboBox to the first value
-        payment_values = self.payment_combo.cget("values")
-        if payment_values:
-            self.payment_combo.set(payment_values[0])
+            print(f"Error searching receipts: {e}")
 
     def refresh_table(self):
-        """Reload all receipt records from the database into the Treeview.
-        Also resets the Payment ComboBox."""
+        self.search_entry.delete(0, "end")
         self.load_payments()
         self.load_receipts()
 
-    # ==============================
-    # Print and Export Functions
-    # ==============================
-
-    def print_receipt(self):
-        """Generate and print a professional receipt for the selected payment."""
-        if not self.selected_payment_data:
-            messagebox.showwarning(
-                "Selection Warning",
-                "Please select a payment to generate a receipt."
-            )
-            return
-
-        # Create receipt text
-        receipt_text = self._generate_receipt_text()
-
-        # Show receipt in a message box for preview
-        messagebox.showinfo(
-            "Receipt Preview",
-            receipt_text
-        )
-
-        # Note: Actual printing would require additional libraries like win32print on Windows
-        # or lpr on Linux. For cross-platform compatibility, we show the preview.
-        messagebox.showinfo(
-            "Print Information",
-            "To print this receipt:\n"
-            "1. Take a screenshot of the receipt preview\n"
-            "2. Or use the Export PDF option for a printable format"
-        )
+    def _fetch_receipt_items(self, payment_id):
+        """Retrieve dynamic line-item billing items for a given payment ID."""
+        items = []
+        try:
+            conn = connect_db()
+            cursor = conn.cursor()
+            
+            # Fetch Payment Type and links
+            cursor.execute("""
+                SELECT PaymentType, LabRequestID, DispensingID, ServiceID, Amount 
+                FROM Payment 
+                WHERE PaymentID = %s
+            """, (payment_id,))
+            pay_row = cursor.fetchone()
+            
+            if pay_row:
+                ptype, lab_req, disp_id, service_id, amount = pay_row
+                
+                if ptype == "Medicines" and disp_id:
+                    # Query prescribed medicines dispensed in this batch
+                    cursor.execute("""
+                        SELECT pr.MedicineName, md.QuantityDispensed, inv.SellingPrice
+                        FROM Medicine_Dispensing md
+                        JOIN Prescription pr ON md.PrescriptionID = pr.PrescriptionID
+                        JOIN Inventory inv ON md.InventoryID = inv.InventoryID
+                        WHERE md.DispensingID = %s
+                    """, (disp_id,))
+                    for row in cursor.fetchall():
+                        name, qty, sell = row
+                        items.append({
+                            "description": name,
+                            "qty": qty,
+                            "price": float(sell),
+                            "total": qty * float(sell)
+                        })
+                elif ptype == "Laboratory" and lab_req:
+                    # Query laboratory tests completed
+                    cursor.execute("""
+                        SELECT lt.TestName, lt.Price
+                        FROM Laboratory_Results res
+                        JOIN Laboratory_Tests lt ON res.TestID = lt.TestID
+                        WHERE res.RequestID = %s
+                    """, (lab_req,))
+                    for row in cursor.fetchall():
+                        name, price = row
+                        items.append({
+                            "description": name,
+                            "qty": 1,
+                            "price": float(price),
+                            "total": float(price)
+                        })
+                elif ptype == "Registration":
+                    items.append({
+                        "description": "Patient Registration Fee",
+                        "qty": 1,
+                        "price": float(amount),
+                        "total": float(amount)
+                    })
+                elif ptype == "Consultation":
+                    items.append({
+                        "description": "Doctor Clinical Consultation",
+                        "qty": 1,
+                        "price": float(amount),
+                        "total": float(amount)
+                    })
+                elif service_id:
+                    cursor.execute("SELECT ServiceName, Price FROM Hospital_Services WHERE ServiceID = %s", (service_id,))
+                    svc = cursor.fetchone()
+                    if svc:
+                        items.append({
+                            "description": svc[0],
+                            "qty": 1,
+                            "price": float(svc[1]),
+                            "total": float(svc[1])
+                        })
+                else:
+                    items.append({
+                        "description": f"{ptype} Service Charge",
+                        "qty": 1,
+                        "price": float(amount),
+                        "total": float(amount)
+                    })
+            conn.close()
+        except Exception as e:
+            print(f"Error fetching receipt items: {e}")
+            
+        # Fallback if empty
+        if not items and self.selected_payment_data:
+            items.append({
+                "description": "Hospital Service Rendered",
+                "qty": 1,
+                "price": float(self.selected_payment_data['Amount']),
+                "total": float(self.selected_payment_data['Amount'])
+            })
+        return items
 
     def _generate_receipt_text(self):
-        """Generate the receipt text content."""
         if not self.selected_payment_data:
-            return ""
-
+            return "No payment selected."
+            
         data = self.selected_payment_data
-        receipt_id = self.receipt_number_entry.get() or "Pending"
-        issue_date = self.issue_date_entry.get() or datetime.now().strftime("%Y-%m-%d")
-
-        receipt = (
-            "╔" + "═" * 48 + "╗\n"
-            "║" + " " * 48 + "║\n"
-            "║" + " " * 10 + "PHYSICAL HEALTH CLINIC" + " " * 14 + "║\n"
-            "║" + " " * 48 + "║\n"
-            "║" + " " * 6 + "🏥 Your Trusted Healthcare Partner" + " " * 12 + "║\n"
-            "║" + " " * 48 + "║\n"
-            "╚" + "═" * 48 + "╝\n\n"
-            "📍 Address: 123 Hospital Road, Freetown, Sierra Leone\n"
-            "📞 Phone: +232 76 123 456\n"
-            "📧 Email: info@physicalhealthclinic.sl\n"
-            "🌐 Website: www.physicalhealthclinic.sl\n\n"
-            "─" * 50 + "\n"
-            f"RECEIPT NO: {receipt_id}\n"
-            "─" * 50 + "\n\n"
-            f"Patient Name: {data['PatientName']}\n"
-            f"Payment ID: #{data['PaymentID']}\n"
-            f"Issue Date: {issue_date}\n"
-            f"Payment Method: {data['PaymentMethod']}\n\n"
-            "─" * 50 + "\n"
-            f"AMOUNT PAID: Le {data['Amount']:,.2f}\n"
-            "─" * 50 + "\n\n"
-            "✅ STATUS: PAID\n\n"
-            "─" * 50 + "\n"
-            "Thank You For Choosing Our Clinic!\n"
-            "We appreciate your trust in our healthcare services.\n"
-            "─" * 50 + "\n"
-            "This receipt is valid for all medical and tax purposes.\n"
-            "─" * 50
+        receipt_num = self.receipt_number_entry.get() or "RCP-PENDING"
+        items = self._fetch_receipt_items(data['PaymentID'])
+        
+        text = (
+            "==================================================\n"
+            "            PHYSICAL HEALTH CLINIC                \n"
+            "       🏥 Your Trusted Healthcare Partner        \n"
+            "==================================================\n"
+            "📍 123 Hospital Road, Freetown, Sierra Leone     \n"
+            "📞 +232 76 123 456 | 🌐 physicalhealthclinic.sl \n"
+            "--------------------------------------------------\n"
+            f"RECEIPT NUMBER: {receipt_num}\n"
+            f"DATE: {self.issue_date_entry.get() or datetime.now().strftime('%Y-%m-%d')}\n"
+            f"PATIENT: {data['PatientName']}\n"
+            f"PAYMENT ID: #{data['PaymentID']}\n"
+            f"METHOD: {data['PaymentMethod']}\n"
+            "--------------------------------------------------\n"
+            "ITEM DESCRIPTION           QTY    UNIT PRICE     TOTAL\n"
+            "--------------------------------------------------\n"
         )
-        return receipt
+        total = 0.0
+        for item in items:
+            desc = item['description'][:24].ljust(25)
+            qty = str(item['qty']).rjust(4)
+            price = f"Le {item['price']:,.2f}".rjust(12)
+            item_tot = f"Le {item['total']:,.2f}".rjust(12)
+            text += f"{desc} {qty} {price} {item_tot}\n"
+            total += item['total']
+            
+        text += (
+            "--------------------------------------------------\n"
+            f"TOTAL PAID:                        Le {total:,.2f}\n"
+            "--------------------------------------------------\n"
+            "✅ STATUS: PAID\n"
+            "Thank you for choosing our clinic!\n"
+            "==================================================\n"
+        )
+        return text
+
+    def print_receipt(self):
+        if not self.selected_payment_data:
+            messagebox.showwarning("Warning", "Please select a receipt/payment first.")
+            return
+        
+        # Show text preview
+        messagebox.showinfo("Receipt Preview", self._generate_receipt_text())
 
     def export_pdf(self):
-        """Export the receipt as a PDF file."""
         if not PDF_AVAILABLE:
             messagebox.showerror(
-                "PDF Library Not Available",
-                "The ReportLab library is required for PDF export.\n"
-                "Install it using: pip install reportlab"
+                "PDF Library Missing",
+                "ReportLab library is required for PDF exports.\nInstall it using: pip install reportlab"
             )
             return
 
         if not self.selected_payment_data:
-            messagebox.showwarning(
-                "Selection Warning",
-                "Please select a payment to export as PDF."
-            )
+            messagebox.showwarning("Warning", "Select a payment first.")
             return
 
-        # Ask user for save location
         file_path = filedialog.asksaveasfilename(
             defaultextension=".pdf",
             filetypes=[("PDF Files", "*.pdf")],
-            title="Save Receipt"
+            title="Save PDF Receipt"
         )
-
         if not file_path:
             return
 
         try:
             self._create_pdf_receipt(file_path)
-            messagebox.showinfo("Success", f"Receipt exported successfully to:\n{file_path}")
+            messagebox.showinfo("Success", f"PDF receipt saved successfully to:\n{file_path}")
         except Exception as e:
-            messagebox.showerror("PDF Error", f"Failed to export PDF:\n{e}")
+            messagebox.showerror("Export Error", f"Failed to generate PDF:\n{e}")
 
     def _create_pdf_receipt(self, file_path):
-        """Create a professional PDF receipt using ReportLab."""
-        if not self.selected_payment_data:
-            return
-
         data = self.selected_payment_data
-        receipt_id = self.receipt_number_entry.get() or "Pending"
+        receipt_num = self.receipt_number_entry.get() or f"RCP-{self.selected_receipt_id:06d}"
         issue_date = self.issue_date_entry.get() or datetime.now().strftime("%Y-%m-%d")
+        items = self._fetch_receipt_items(data['PaymentID'])
 
-        # Create PDF document
-        doc = SimpleDocTemplate(file_path, pagesize=letter, topMargin=72, bottomMargin=72)
+        # Create doc
+        doc = SimpleDocTemplate(file_path, pagesize=letter, topMargin=54, bottomMargin=54, leftMargin=54, rightMargin=54)
         styles = getSampleStyleSheet()
         story = []
 
-        # Clinic Header
-        header_style = styles["Heading1"]
-        header_style.alignment = TA_CENTER
-        header = Paragraph("PHYSICAL HEALTH CLINIC", header_style)
-        story.append(header)
-        story.append(Spacer(1, 6))
-
-        # Tagline
-        tagline_style = styles["Normal"]
-        tagline_style.alignment = TA_CENTER
-        tagline = Paragraph("<i>Your Trusted Healthcare Partner</i>", tagline_style)
-        story.append(tagline)
-        story.append(Spacer(1, 12))
-
-        # Contact Information
-        contact_style = styles["Normal"]
-        contact_style.alignment = TA_CENTER
-        contact_style.fontSize = 10
-        contact = Paragraph(
-            "📍 123 Hospital Road, Freetown, Sierra Leone<br/>"
-            "📞 +232 76 123 456<br/>"
-            "📧 info@physicalhealthclinic.sl<br/>"
-            "🌐 www.physicalhealthclinic.sl",
-            contact_style
+        # Styles
+        title_style = ParagraphStyle(
+            'ReceiptTitle',
+            parent=styles['Heading1'],
+            fontName='Helvetica-Bold',
+            fontSize=24,
+            textColor=colors.HexColor('#1F6AA5'),
+            alignment=TA_CENTER
         )
-        story.append(contact)
-        story.append(Spacer(1, 24))
+        subtitle_style = ParagraphStyle(
+            'ReceiptSubtitle',
+            parent=styles['Normal'],
+            fontName='Helvetica-Oblique',
+            fontSize=10,
+            textColor=colors.grey,
+            alignment=TA_CENTER
+        )
+        meta_style = ParagraphStyle(
+            'ReceiptMeta',
+            parent=styles['Normal'],
+            fontName='Helvetica',
+            fontSize=10,
+            textColor=colors.black
+        )
 
-        # Divider line
-        story.append(Spacer(1, 6))
+        # Header Block
+        story.append(Paragraph("PHYSICAL HEALTH CLINIC", title_style))
+        story.append(Spacer(1, 4))
+        story.append(Paragraph("Your Trusted Partners in Premium Clinical Healthcare", subtitle_style))
+        story.append(Spacer(1, 10))
 
-        # Receipt Number
-        receipt_style = styles["Heading2"]
-        receipt_style.alignment = TA_CENTER
-        receipt_para = Paragraph(f"RECEIPT NO: {receipt_id}", receipt_style)
-        story.append(receipt_para)
-        story.append(Spacer(1, 12))
-
-        # Receipt details table
-        receipt_data = [
-            ["Patient Name:", data['PatientName']],
-            ["Payment ID:", f"#{data['PaymentID']}"],
-            ["Issue Date:", issue_date],
-            ["Payment Method:", data['PaymentMethod']],
-            ["", ""],
-            ["Amount Paid:", f"<b>Le {data['Amount']:,.2f}</b>"],
+        # Contact table
+        contact_data = [
+            [
+                Paragraph("<b>📍 Address:</b> 123 Hospital Road, Freetown, Sierra Leone", meta_style),
+                Paragraph("<b>📞 Contact:</b> +232 76 123 456", meta_style)
+            ],
+            [
+                Paragraph("<b>📧 Email:</b> billing@physicalhealthclinic.sl", meta_style),
+                Paragraph("<b>🌐 Web:</b> physicalhealthclinic.sl", meta_style)
+            ]
         ]
-
-        table = Table(receipt_data, colWidths=[150, 200])
-        table.setStyle(TableStyle([
-            ('FONTNAME', (0, 0), (-1, -1), 'Helvetica'),
-            ('FONTSIZE', (0, 0), (-1, -1), 12),
-            ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
-            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-            ('TEXTCOLOR', (0, 0), (0, -1), colors.black),
-            ('BACKGROUND', (0, 0), (0, -1), colors.lightgrey),
-            ('GRID', (0, 0), (-1, -1), 1, colors.black),
-            ('FONTNAME', (1, 5), (1, 5), 'Helvetica-Bold'),
+        contact_table = Table(contact_data, colWidths=[250, 250])
+        contact_table.setStyle(TableStyle([
+            ('LINEBELOW', (0, -1), (-1, -1), 1, colors.HexColor('#1F6AA5')),
+            ('PADDING', (0, 0), (-1, -1), 4),
         ]))
-        story.append(table)
-        story.append(Spacer(1, 24))
+        story.append(contact_table)
+        story.append(Spacer(1, 15))
 
-        # Status
-        status_style = styles["Heading2"]
-        status_style.alignment = TA_CENTER
-        status_style.textColor = colors.green
-        status = Paragraph("✅ STATUS: PAID", status_style)
-        story.append(status)
-        story.append(Spacer(1, 24))
-
-        # Thank you message
-        thank_style = styles["Normal"]
-        thank_style.alignment = TA_CENTER
-        thank = Paragraph(
-            "<b>Thank You For Choosing Our Clinic!</b><br/>"
-            "<i>We appreciate your trust in our healthcare services.</i>",
-            thank_style
+        # Meta Panel (Receipt ID, Date, Patient, Payment ID)
+        meta_left = (
+            f"<b>Receipt No:</b> {receipt_num}<br/>"
+            f"<b>Issue Date:</b> {issue_date}<br/>"
+            f"<b>Printed By:</b> Staff ID {self.worker_id}"
         )
-        story.append(thank)
-        story.append(Spacer(1, 12))
-
-        # Validity notice
-        valid_style = styles["Normal"]
-        valid_style.alignment = TA_CENTER
-        valid_style.fontSize = 9
-        valid_style.textColor = colors.grey
-        valid = Paragraph(
-            "This receipt is valid for all medical and tax purposes.",
-            valid_style
+        meta_right = (
+            f"<b>Patient Name:</b> {data['PatientName']}<br/>"
+            f"<b>Payment ID:</b> #{data['PaymentID']}<br/>"
+            f"<b>Payment Method:</b> {data['PaymentMethod']}"
         )
-        story.append(valid)
+        panel_data = [
+            [Paragraph(meta_left, meta_style), Paragraph(meta_right, meta_style)]
+        ]
+        panel_table = Table(panel_data, colWidths=[250, 250])
+        panel_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#F7F9FC')),
+            ('BOX', (0, 0), (-1, -1), 1, colors.HexColor('#E2E8F0')),
+            ('PADDING', (0, 0), (-1, -1), 10),
+        ]))
+        story.append(panel_table)
+        story.append(Spacer(1, 20))
 
-        # Build PDF
+        # Itemized Table
+        table_headers = [Paragraph("<b>Item Description</b>", meta_style), 
+                         Paragraph("<b>Qty</b>", meta_style), 
+                         Paragraph("<b>Unit Price</b>", meta_style), 
+                         Paragraph("<b>Total</b>", meta_style)]
+        table_rows = [table_headers]
+        
+        subtotal = 0.0
+        for item in items:
+            table_rows.append([
+                Paragraph(item['description'], meta_style),
+                Paragraph(str(item['qty']), meta_style),
+                Paragraph(f"Le {item['price']:,.2f}", meta_style),
+                Paragraph(f"Le {item['total']:,.2f}", meta_style)
+            ])
+            subtotal += item['total']
+
+        # Totals rows
+        table_rows.append([Paragraph("", meta_style), Paragraph("", meta_style), Paragraph("<b>Subtotal:</b>", meta_style), Paragraph(f"Le {subtotal:,.2f}", meta_style)])
+        table_rows.append([Paragraph("", meta_style), Paragraph("", meta_style), Paragraph("<b>Total Paid:</b>", meta_style), Paragraph(f"<b>Le {subtotal:,.2f}</b>", meta_style)])
+
+        item_table = Table(table_rows, colWidths=[240, 50, 100, 110])
+        item_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1F6AA5')),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+            ('BOTTOMPADDING', (0, 0), (-1, 0), 8),
+            ('GRID', (0, 0), (-1, -3), 0.5, colors.HexColor('#CBD5E0')),
+            ('PADDING', (0, 0), (-1, -1), 6),
+            ('ALIGN', (1, 0), (-1, -1), 'CENTER'),
+            ('FONTNAME', (0, -2), (-1, -1), 'Helvetica-Bold'),
+        ]))
+        story.append(item_table)
+        story.append(Spacer(1, 30))
+
+        # Paid stamp
+        paid_style = ParagraphStyle(
+            'PaidStamp',
+            parent=styles['Heading2'],
+            fontName='Helvetica-Bold',
+            fontSize=16,
+            textColor=colors.HexColor('#4CAF50'),
+            alignment=TA_CENTER
+        )
+        story.append(Paragraph("✅ PAID & VERIFIED", paid_style))
+        story.append(Spacer(1, 20))
+
+        # Validity stamp
+        valid_style = ParagraphStyle(
+            'ValidStamp',
+            parent=styles['Normal'],
+            fontName='Helvetica-Oblique',
+            fontSize=8,
+            textColor=colors.grey,
+            alignment=TA_CENTER
+        )
+        story.append(Paragraph("This is an officially certified electronic receipt valid for all medical claims and audits.", valid_style))
+
         doc.build(story)
 
 

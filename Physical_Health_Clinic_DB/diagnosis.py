@@ -2,677 +2,336 @@ import customtkinter as ctk
 from tkinter import ttk, messagebox
 from database import connect_db
 from datetime import datetime
+import session
 
 ctk.set_appearance_mode("Light")
 ctk.set_default_color_theme("blue")
 
-
 class DiagnosisWindow(ctk.CTkToplevel):
-    """Diagnosis Management Window for Physical Health Clinic Record System."""
+    """Diagnosis Management Panel (View/Edit) for Clinical Records."""
 
     def __init__(self, parent):
         super().__init__(parent)
+        self.master = parent
 
         self.title("Diagnosis Management")
-        self.geometry("1500x850")
+        self.geometry("1400x800")
         self.resizable(True, True)
+        self.transient(parent)
+        self.grab_set()
 
-        # Track selected diagnosis ID for updates and deletes
         self.selected_diagnosis_id = None
+        self.user_id = 1
+        if hasattr(session, "current_user") and session.current_user:
+            self.user_id = session.current_user.get("user_id", 1)
 
-        # ==============================
-        # Back Button (top-left corner)
-        # ==============================
-
-        back_btn = ctk.CTkButton(
-            self,
-            text="⬅ Back",
-            width=100,
-            command=self.destroy
-        )
+        # Back Button
+        back_btn = ctk.CTkButton(self, text="⬅ Back", width=100, command=self.destroy)
         back_btn.place(x=20, y=20)
 
-        # ==============================
-        # Window Title
-        # ==============================
+        # Title
+        ctk.CTkLabel(self, text="🩺 Diagnosis Catalog", font=("Arial", 30, "bold")).pack(pady=20)
 
-        title = ctk.CTkLabel(
-            self,
-            text="🩺 Diagnosis Management",
-            font=("Arial", 30, "bold")
-        )
-        title.pack(pady=20)
-
-        # ==============================
-        # Main Frame
-        # ==============================
-
+        # Main Layout
         main_frame = ctk.CTkFrame(self)
         main_frame.pack(fill="both", expand=True, padx=20, pady=20)
 
-        # ==============================
-        # Left Panel (Diagnosis Form)
-        # ==============================
-
+        # Left Panel (Edit Form)
         form_frame = ctk.CTkFrame(main_frame, width=420)
         form_frame.pack(side="left", fill="y", padx=15, pady=15)
+        form_frame.pack_propagate(False)
 
-        ctk.CTkLabel(
-            form_frame,
-            text="Diagnosis Information",
-            font=("Arial", 22, "bold")
-        ).pack(pady=20)
+        ctk.CTkLabel(form_frame, text="Diagnosis Details", font=("Arial", 22, "bold")).pack(pady=20)
 
-        # Patient ComboBox
-        ctk.CTkLabel(
-            form_frame,
-            text="Select Patient:",
-            font=("Arial", 14)
-        ).pack(pady=(10, 2), anchor="w", padx=50)
-
+        # Patient Combo
+        ctk.CTkLabel(form_frame, text="Select Patient:", font=("Arial", 12, "bold")).pack(anchor="w", padx=50, pady=(10, 2))
         self.patient_combo = ctk.CTkComboBox(form_frame, width=320, values=[])
         self.patient_combo.pack(pady=5)
+        self.load_patients()
 
-        # Health Worker ComboBox
-        ctk.CTkLabel(
-            form_frame,
-            text="Select Health Worker:",
-            font=("Arial", 14)
-        ).pack(pady=(10, 2), anchor="w", padx=50)
+        # Doctor Combo
+        ctk.CTkLabel(form_frame, text="Select Doctor:", font=("Arial", 12, "bold")).pack(anchor="w", padx=50, pady=(10, 2))
+        self.doctor_combo = ctk.CTkComboBox(form_frame, width=320, values=[])
+        self.doctor_combo.pack(pady=5)
+        self.load_doctors()
 
-        self.worker_combo = ctk.CTkComboBox(form_frame, width=320, values=[])
-        self.worker_combo.pack(pady=5)
-
-        # Diagnosis Date Entry
-        ctk.CTkLabel(
-            form_frame,
-            text="Diagnosis Date (YYYY-MM-DD):",
-            font=("Arial", 14)
-        ).pack(pady=(10, 2), anchor="w", padx=50)
-
-        self.date_entry = ctk.CTkEntry(
-            form_frame,
-            width=320,
-            placeholder_text="YYYY-MM-DD"
-        )
+        # Date Entry
+        ctk.CTkLabel(form_frame, text="Diagnosis Date (YYYY-MM-DD):", font=("Arial", 12, "bold")).pack(anchor="w", padx=50, pady=(10, 2))
+        self.date_entry = ctk.CTkEntry(form_frame, width=320)
         self.date_entry.pack(pady=5)
 
-        # Diagnosis Description (CTkTextbox for multiple sentences)
-        ctk.CTkLabel(
-            form_frame,
-            text="Diagnosis Description:",
-            font=("Arial", 14)
-        ).pack(pady=(10, 2), anchor="w", padx=50)
+        # Details Textbox
+        ctk.CTkLabel(form_frame, text="Clinical Findings / Details:", font=("Arial", 12, "bold")).pack(anchor="w", padx=50, pady=(10, 2))
+        self.details_textbox = ctk.CTkTextbox(form_frame, width=320, height=120)
+        self.details_textbox.pack(pady=5)
 
-        self.description_textbox = ctk.CTkTextbox(form_frame, width=320, height=120)
-        self.description_textbox.pack(pady=5)
-
-        # ==============================
         # Action Buttons
-        # ==============================
+        btn_frame = ctk.CTkFrame(form_frame, fg_color="transparent")
+        btn_frame.pack(pady=20)
 
-        button_frame = ctk.CTkFrame(form_frame, fg_color="transparent")
-        button_frame.pack(pady=25)
+        ctk.CTkButton(btn_frame, text="➕ Add", command=self.add_diagnosis, width=145).grid(row=0, column=0, padx=5, pady=5)
+        ctk.CTkButton(btn_frame, text="✏ Update", command=self.update_diagnosis, width=145).grid(row=0, column=1, padx=5, pady=5)
+        ctk.CTkButton(btn_frame, text="❌ Delete", command=self.delete_diagnosis, fg_color="red", hover_color="#b71c1c", width=145).grid(row=1, column=0, padx=5, pady=5)
+        ctk.CTkButton(btn_frame, text="🧹 Clear", command=self.clear_fields, width=145).grid(row=1, column=1, padx=5, pady=5)
 
-        ctk.CTkButton(
-            button_frame,
-            text="➕ Add Diagnosis",
-            width=140,
-            command=self.add_diagnosis
-        ).grid(row=0, column=0, padx=5, pady=5)
+        # Right Panel (List)
+        self.table_frame = ctk.CTkFrame(main_frame)
+        self.table_frame.pack(side="right", fill="both", expand=True, padx=15, pady=15)
 
-        ctk.CTkButton(
-            button_frame,
-            text="✏ Update",
-            width=140,
-            command=self.update_diagnosis
-        ).grid(row=0, column=1, padx=5, pady=5)
+        # Search Bar
+        search_frame = ctk.CTkFrame(self.table_frame, fg_color="transparent")
+        search_frame.pack(fill="x", padx=15, pady=10)
 
-        ctk.CTkButton(
-            button_frame,
-            text="❌ Delete",
-            width=140,
-            command=self.delete_diagnosis
-        ).grid(row=1, column=0, padx=5, pady=5)
+        self.search_entry = ctk.CTkEntry(search_frame, placeholder_text="Search by Patient or Findings...", width=300)
+        self.search_entry.pack(side="left")
+        self.search_entry.bind("<KeyRelease>", self.search_diagnosis)
 
-        ctk.CTkButton(
-            button_frame,
-            text="🧹 Clear",
-            width=140,
-            command=self.clear_fields
-        ).grid(row=1, column=1, padx=5, pady=5)
+        ctk.CTkButton(search_frame, text="Search", command=self.search_diagnosis, width=100).pack(side="left", padx=10)
+        ctk.CTkButton(search_frame, text="Reset", command=self.refresh_table, width=100).pack(side="left")
 
-        # ==============================
-        # Right Panel (Treeview Table)
-        # ==============================
+        # Treeview Setup
+        container = ctk.CTkFrame(self.table_frame, fg_color="transparent")
+        container.pack(fill="both", expand=True, padx=15, pady=5)
 
-        table_frame = ctk.CTkFrame(main_frame)
-        table_frame.pack(side="right", fill="both", expand=True, padx=15, pady=15)
+        scrollbar = ttk.Scrollbar(container)
+        scrollbar.pack(side="right", fill="y")
 
-        # Search bar at top of right panel
-        search_frame = ctk.CTkFrame(table_frame)
-        search_frame.pack(fill="x", pady=10)
-
-        self.search_entry = ctk.CTkEntry(
-            search_frame,
-            width=300,
-            placeholder_text="Search Diagnosis..."
-        )
-        self.search_entry.pack(side="left", padx=10)
-
-        ctk.CTkButton(
-            search_frame,
-            text="Search",
-            command=self.search_diagnosis
-        ).pack(side="left", padx=5)
-
-        ctk.CTkButton(
-            search_frame,
-            text="Refresh",
-            command=self.refresh_table
-        ).pack(side="left", padx=5)
-
-        # Treeview columns
-        columns = (
-            "Diagnosis ID",
-            "Patient",
-            "Health Worker",
-            "Diagnosis Date",
-            "Description"
-        )
-
-        # Style Treeview table (dark theme consistent with other modules)
-        style = ttk.Style()
-        style.theme_use("clam")
-        style.configure(
-            "Treeview",
-            background="#2b2b2b",
-            foreground="white",
-            fieldbackground="#2b2b2b",
-            rowheight=35,
-            font=("Arial", 13)
-        )
-        style.map(
-            "Treeview",
-            background=[("selected", "#1F6AA5")],
-            foreground=[("selected", "white")]
-        )
-        style.configure(
-            "Treeview.Heading",
-            background="#1f1f1f",
-            foreground="white",
-            font=("Arial", 14, "bold"),
-            relief="flat"
-        )
-        style.map(
-            "Treeview.Heading",
-            background=[("active", "#2d2d2d")]
-        )
-
-        # Create Treeview widget
-        self.table = ttk.Treeview(
-            table_frame,
-            columns=columns,
-            show="headings",
-            height=20
-        )
-
+        columns = ("ID", "Patient Name", "Doctor Name", "Date", "Diagnosis Details")
+        self.table = ttk.Treeview(container, columns=columns, show="headings", yscrollcommand=scrollbar.set, height=18)
         for col in columns:
-            self.table.heading(col, text=col, anchor="center")
-            self.table.column(col, width=150, anchor="center")
+            self.table.heading(col, text=col, anchor="w")
+            self.table.column(col, anchor="w", width=130)
+        self.table.column("ID", width=50, anchor="center")
+        self.table.column("Diagnosis Details", width=300)
 
-        # Make the Description column wider to display full text
-        self.table.column("Description", width=300, anchor="center")
-
-        # Vertical scrollbar
-        v_scrollbar = ttk.Scrollbar(
-            table_frame,
-            orient="vertical",
-            command=self.table.yview
-        )
-
-        # Horizontal scrollbar
-        h_scrollbar = ttk.Scrollbar(
-            table_frame,
-            orient="horizontal",
-            command=self.table.xview
-        )
-
-        self.table.configure(
-            yscrollcommand=v_scrollbar.set,
-            xscrollcommand=h_scrollbar.set
-        )
-
-        # Pack scrollbars and treeview
-        h_scrollbar.pack(side="bottom", fill="x")
         self.table.pack(side="left", fill="both", expand=True)
-        v_scrollbar.pack(side="right", fill="y")
+        scrollbar.config(command=self.table.yview)
 
-        # Bind row selection to populate the form
-        self.table.bind("<<TreeviewSelect>>", self.select_diagnosis)
+        self.table.bind("<<TreeviewSelect>>", self.on_row_selected)
 
-        # Load initial data into ComboBoxes and Treeview
-        self.load_patients()
-        self.load_workers()
-        self.load_diagnosis()
-
-    # ==============================
-    # Helper Methods
-    # ==============================
+        self.load_diagnoses()
+        self.clear_fields()
 
     def extract_id(self, combo_value):
-        """Extract the integer ID from a ComboBox display string like '1 - Alhaji Mawiya Sow 2'."""
         if not combo_value:
             return None
         try:
-            parts = combo_value.split(" - ")
-            return int(parts[0])
-        except Exception:
+            return int(combo_value.split("ID: ")[1].replace(")", ""))
+        except:
             return None
 
-    # ==============================
-    # Data Loading Methods
-    # ==============================
-
     def load_patients(self):
-        """Load all patients from the Patients table into the Patient ComboBox."""
         try:
             conn = connect_db()
             cursor = conn.cursor()
-            query = "SELECT PatientID, FullName FROM Patients ORDER BY PatientID"
-            cursor.execute(query)
-            rows = cursor.fetchall()
-
-            patient_list = []
-            for row in rows:
-                patient_list.append(f"{row[0]} - {row[1]}")
-
-            self.patient_combo.configure(values=patient_list)
-            if patient_list:
-                self.patient_combo.set(patient_list[0])
+            cursor.execute("SELECT PatientID, FullName FROM Patients ORDER BY PatientID DESC")
+            pats = [f"{name} (ID: {pid})" for pid, name in cursor.fetchall()]
+            self.patient_combo.configure(values=pats)
+            if pats:
+                self.patient_combo.set(pats[0])
             conn.close()
         except Exception as e:
-            messagebox.showerror("Database Error", f"Failed to load patients:\n{e}")
+            print(f"Error loading patients: {e}")
 
-    def load_workers(self):
-        """Load all health workers from the Health_Workers table into the Worker ComboBox."""
+    def load_doctors(self):
         try:
             conn = connect_db()
             cursor = conn.cursor()
-            query = "SELECT WorkerID, FullName FROM Health_Workers ORDER BY WorkerID"
-            cursor.execute(query)
-            rows = cursor.fetchall()
-
-            worker_list = []
-            for row in rows:
-                worker_list.append(f"{row[0]} - {row[1]}")
-
-            self.worker_combo.configure(values=worker_list)
-            
-            # If opened from Doctor Dashboard, pre-select the logged-in doctor and disable the dropdown
-            if hasattr(self.master, 'doctor_worker_id'):
-                doctor_str = None
-                for worker in worker_list:
-                    if worker.startswith(f"{self.master.doctor_worker_id} -"):
-                        doctor_str = worker
-                        break
-                if doctor_str:
-                    self.worker_combo.set(doctor_str)
-                    self.worker_combo.configure(state="disabled")
-            elif worker_list:
-                self.worker_combo.set(worker_list[0])
-                
+            cursor.execute("SELECT WorkerID, FullName FROM Health_Workers WHERE Role = 'Doctor'")
+            docs = [f"Dr. {name} (ID: {wid})" for wid, name in cursor.fetchall()]
+            self.doctor_combo.configure(values=docs)
+            if docs:
+                self.doctor_combo.set(docs[0])
             conn.close()
         except Exception as e:
-            messagebox.showerror("Database Error", f"Failed to load health workers:\n{e}")
+            print(f"Error loading doctors: {e}")
 
-    def load_diagnosis(self):
-        """Fetch all diagnosis records from the database and populate the Treeview."""
-        # Clear existing items in the treeview
+    def load_diagnoses(self):
         for item in self.table.get_children():
             self.table.delete(item)
-
         try:
             conn = connect_db()
             cursor = conn.cursor()
-            
-            if hasattr(self.master, 'doctor_worker_id'):
-                query = """
-                    SELECT 
-                        d.DiagnosisID,
-                        COALESCE(CONCAT(p.PatientID, ' - ', p.FullName), 'Unknown Patient'),
-                        COALESCE(CONCAT(w.WorkerID, ' - ', w.FullName), 'Unknown Worker'),
-                        d.DiagnosisDate,
-                        d.Description
-                    FROM Diagnosis d
-                    LEFT JOIN Patients p ON d.PatientID = p.PatientID
-                    LEFT JOIN Health_Workers w ON d.WorkerID = w.WorkerID
-                    WHERE d.WorkerID = %s
-                    ORDER BY d.DiagnosisID DESC
-                """
-                cursor.execute(query, (self.master.doctor_worker_id,))
-            else:
-                query = """
-                    SELECT 
-                        d.DiagnosisID,
-                        COALESCE(CONCAT(p.PatientID, ' - ', p.FullName), 'Unknown Patient'),
-                        COALESCE(CONCAT(w.WorkerID, ' - ', w.FullName), 'Unknown Worker'),
-                        d.DiagnosisDate,
-                        d.Description
-                    FROM Diagnosis d
-                    LEFT JOIN Patients p ON d.PatientID = p.PatientID
-                    LEFT JOIN Health_Workers w ON d.WorkerID = w.WorkerID
-                    ORDER BY d.DiagnosisID DESC
-                """
-                cursor.execute(query)
-                
-            rows = cursor.fetchall()
-
-            for row in rows:
-                cleaned_row = ["" if val is None else str(val) for val in row]
-                self.table.insert("", "end", values=cleaned_row)
-
+            cursor.execute("""
+                SELECT d.DiagnosisID, p.FullName, hw.FullName, DATE(d.DiagnosisDate), d.DiagnosisDetails
+                FROM Diagnosis d
+                LEFT JOIN Patients p ON d.PatientID = p.PatientID
+                LEFT JOIN Health_Workers hw ON d.DoctorID = hw.WorkerID
+                ORDER BY d.DiagnosisID DESC
+            """)
+            for row in cursor.fetchall():
+                cleaned = ["" if val is None else str(val) for val in row]
+                self.table.insert("", "end", values=cleaned)
             conn.close()
         except Exception as e:
-            messagebox.showerror("Database Error", f"Failed to load diagnoses:\n{e}")
+            print(f"Error loading diagnoses: {e}")
 
-    # ==============================
-    # CRUD Operations
-    # ==============================
+    def on_row_selected(self, event):
+        selected = self.table.selection()
+        if not selected:
+            return
+        row = self.table.item(selected[0], "values")
+        self.selected_diagnosis_id = int(row[0])
+
+        # Match patient combo
+        pat_vals = self.patient_combo.cget("values")
+        for p in pat_vals:
+            if row[1] in p:
+                self.patient_combo.set(p)
+                break
+
+        # Match doctor combo
+        doc_vals = self.doctor_combo.cget("values")
+        for d in doc_vals:
+            if row[2] in d:
+                self.doctor_combo.set(d)
+                break
+
+        self.date_entry.delete(0, "end")
+        self.date_entry.insert(0, row[3])
+
+        self.details_textbox.delete("1.0", "end")
+        self.details_textbox.insert("1.0", row[4])
+
+    def clear_fields(self):
+        self.selected_diagnosis_id = None
+        self.date_entry.delete(0, "end")
+        self.date_entry.insert(0, datetime.now().strftime("%Y-%m-%d"))
+        self.details_textbox.delete("1.0", "end")
+        self.table.selection_remove(self.table.selection())
 
     def add_diagnosis(self):
-        """Validate all fields and save a new diagnosis record to MySQL."""
-        patient_val = self.patient_combo.get()
-        worker_val = self.worker_combo.get()
-        diagnosis_date = self.date_entry.get().strip()
-        description = self.description_textbox.get("1.0", "end").strip()
+        patient_id = self.extract_id(self.patient_combo.get())
+        doctor_id = self.extract_id(self.doctor_combo.get())
+        diag_date = self.date_entry.get().strip()
+        details = self.details_textbox.get("1.0", "end").strip()
 
-        # Extract IDs from ComboBox display strings
-        patient_id = self.extract_id(patient_val)
-        worker_id = self.extract_id(worker_val)
-
-        # Validate all required fields are filled
-        if not patient_id:
-            messagebox.showerror("Validation Error", "Please select a valid patient.")
-            return
-        if not worker_id:
-            messagebox.showerror("Validation Error", "Please select a valid health worker.")
-            return
-        if not diagnosis_date:
-            messagebox.showerror("Validation Error", "Please enter the diagnosis date.")
-            return
-        if not description:
-            messagebox.showerror("Validation Error", "Please enter the diagnosis description.")
+        if not patient_id or not doctor_id or not details:
+            messagebox.showerror("Error", "All fields are required.")
             return
 
-        # Validate date format (YYYY-MM-DD)
         try:
-            datetime.strptime(diagnosis_date, "%Y-%m-%d")
+            datetime.strptime(diag_date, "%Y-%m-%d")
         except ValueError:
-            messagebox.showerror(
-                "Validation Error",
-                "Invalid date format. Please use YYYY-MM-DD."
-            )
+            messagebox.showerror("Error", "Use YYYY-MM-DD date format.")
             return
 
         try:
             conn = connect_db()
             cursor = conn.cursor()
-            query = """
-                INSERT INTO Diagnosis (PatientID, WorkerID, DiagnosisDate, Description)
-                VALUES (%s, %s, %s, %s)
-            """
-            cursor.execute(query, (patient_id, worker_id, diagnosis_date, description))
+            cursor.execute("""
+                INSERT INTO Diagnosis (AppointmentID, PatientID, DoctorID, DiagnosisDetails, DiagnosisDate, LabRequestID)
+                VALUES (NULL, %s, %s, %s, %s, NULL)
+            """, (patient_id, doctor_id, details, diag_date))
+            diag_id = cursor.lastrowid
             conn.commit()
             conn.close()
 
+            # Write audit log
+            from database import log_audit_action
+            log_audit_action(self.user_id, f"Recorded diagnosis (DiagnosisID: {diag_id}) for PatientID: {patient_id}")
+
             messagebox.showinfo("Success", "Diagnosis added successfully!")
-            self.load_diagnosis()
+            self.load_diagnoses()
             self.clear_fields()
         except Exception as e:
             messagebox.showerror("Database Error", f"Failed to add diagnosis:\n{e}")
 
     def update_diagnosis(self):
-        """Update the selected diagnosis record in the database."""
         if not self.selected_diagnosis_id:
-            messagebox.showwarning(
-                "Selection Warning",
-                "Please select a diagnosis from the table to update."
-            )
+            messagebox.showwarning("Warning", "Select a diagnosis record to update.")
             return
 
-        patient_val = self.patient_combo.get()
-        worker_val = self.worker_combo.get()
-        diagnosis_date = self.date_entry.get().strip()
-        description = self.description_textbox.get("1.0", "end").strip()
+        patient_id = self.extract_id(self.patient_combo.get())
+        doctor_id = self.extract_id(self.doctor_combo.get())
+        diag_date = self.date_entry.get().strip()
+        details = self.details_textbox.get("1.0", "end").strip()
 
-        patient_id = self.extract_id(patient_val)
-        worker_id = self.extract_id(worker_val)
-
-        # Validate all required fields
-        if not patient_id:
-            messagebox.showerror("Validation Error", "Please select a valid patient.")
-            return
-        if not worker_id:
-            messagebox.showerror("Validation Error", "Please select a valid health worker.")
-            return
-        if not diagnosis_date:
-            messagebox.showerror("Validation Error", "Please enter the diagnosis date.")
-            return
-        if not description:
-            messagebox.showerror("Validation Error", "Please enter the diagnosis description.")
+        if not patient_id or not doctor_id or not details:
+            messagebox.showerror("Error", "All fields are required.")
             return
 
-        # Validate date format (YYYY-MM-DD)
         try:
-            datetime.strptime(diagnosis_date, "%Y-%m-%d")
+            datetime.strptime(diag_date, "%Y-%m-%d")
         except ValueError:
-            messagebox.showerror(
-                "Validation Error",
-                "Invalid date format. Please use YYYY-MM-DD."
-            )
+            messagebox.showerror("Error", "Use YYYY-MM-DD date format.")
             return
 
         try:
             conn = connect_db()
             cursor = conn.cursor()
-            query = """
+            cursor.execute("""
                 UPDATE Diagnosis
-                SET PatientID = %s, WorkerID = %s, DiagnosisDate = %s, Description = %s
+                SET PatientID = %s, DoctorID = %s, DiagnosisDetails = %s, DiagnosisDate = %s
                 WHERE DiagnosisID = %s
-            """
-            cursor.execute(query, (
-                patient_id, worker_id, diagnosis_date, description,
-                self.selected_diagnosis_id
-            ))
+            """, (patient_id, doctor_id, details, diag_date, self.selected_diagnosis_id))
             conn.commit()
             conn.close()
 
             messagebox.showinfo("Success", "Diagnosis updated successfully!")
-            self.load_diagnosis()
+            self.load_diagnoses()
             self.clear_fields()
         except Exception as e:
             messagebox.showerror("Database Error", f"Failed to update diagnosis:\n{e}")
 
     def delete_diagnosis(self):
-        """Delete the selected diagnosis record after user confirmation."""
         if not self.selected_diagnosis_id:
-            messagebox.showwarning(
-                "Selection Warning",
-                "Please select a diagnosis from the table to delete."
-            )
+            messagebox.showwarning("Warning", "Select a diagnosis record to delete.")
             return
 
-        confirm = messagebox.askyesno(
-            "Confirm Delete",
-            "Are you sure you want to delete this diagnosis record?"
-        )
+        confirm = messagebox.askyesno("Confirm Delete", "Are you sure you want to delete this diagnosis record?")
         if not confirm:
             return
 
         try:
             conn = connect_db()
             cursor = conn.cursor()
-            query = "DELETE FROM Diagnosis WHERE DiagnosisID = %s"
-            cursor.execute(query, (self.selected_diagnosis_id,))
+            cursor.execute("DELETE FROM Diagnosis WHERE DiagnosisID = %s", (self.selected_diagnosis_id,))
             conn.commit()
             conn.close()
 
             messagebox.showinfo("Success", "Diagnosis deleted successfully!")
-            self.load_diagnosis()
+            self.load_diagnoses()
             self.clear_fields()
         except Exception as e:
             messagebox.showerror("Database Error", f"Failed to delete diagnosis:\n{e}")
 
-    # ==============================
-    # Search, Select, Clear, Refresh
-    # ==============================
-
-    def search_diagnosis(self):
-        """Search diagnoses by Patient Name, Health Worker Name, or Diagnosis Date.
-        Displays only matching records in the Treeview."""
-        search_query = self.search_entry.get().strip()
-        if not search_query:
-            self.load_diagnosis()
+    def search_diagnosis(self, event=None):
+        q = self.search_entry.get().strip()
+        if not q:
+            self.load_diagnoses()
             return
-
-        # Clear existing items in treeview
         for item in self.table.get_children():
             self.table.delete(item)
-
         try:
             conn = connect_db()
             cursor = conn.cursor()
-            
-            if hasattr(self.master, 'doctor_worker_id'):
-                query = """
-                    SELECT 
-                        d.DiagnosisID,
-                        COALESCE(CONCAT(p.PatientID, ' - ', p.FullName), 'Unknown Patient'),
-                        COALESCE(CONCAT(w.WorkerID, ' - ', w.FullName), 'Unknown Worker'),
-                        d.DiagnosisDate,
-                        d.Description
-                    FROM Diagnosis d
-                    LEFT JOIN Patients p ON d.PatientID = p.PatientID
-                    LEFT JOIN Health_Workers w ON d.WorkerID = w.WorkerID
-                    WHERE d.WorkerID = %s AND (p.FullName LIKE %s
-                       OR w.FullName LIKE %s
-                       OR d.DiagnosisDate LIKE %s)
-                    ORDER BY d.DiagnosisID DESC
-                """
-                like_val = f"%{search_query}%"
-                cursor.execute(query, (self.master.doctor_worker_id, like_val, like_val, like_val))
-            else:
-                query = """
-                    SELECT 
-                        d.DiagnosisID,
-                        COALESCE(CONCAT(p.PatientID, ' - ', p.FullName), 'Unknown Patient'),
-                        COALESCE(CONCAT(w.WorkerID, ' - ', w.FullName), 'Unknown Worker'),
-                        d.DiagnosisDate,
-                        d.Description
-                    FROM Diagnosis d
-                    LEFT JOIN Patients p ON d.PatientID = p.PatientID
-                    LEFT JOIN Health_Workers w ON d.WorkerID = w.WorkerID
-                    WHERE p.FullName LIKE %s
-                       OR w.FullName LIKE %s
-                       OR d.DiagnosisDate LIKE %s
-                    ORDER BY d.DiagnosisID DESC
-                """
-                like_val = f"%{search_query}%"
-                cursor.execute(query, (like_val, like_val, like_val))
-                
-            rows = cursor.fetchall()
-
-            for row in rows:
-                cleaned_row = ["" if val is None else str(val) for val in row]
-                self.table.insert("", "end", values=cleaned_row)
-
+            cursor.execute("""
+                SELECT d.DiagnosisID, p.FullName, hw.FullName, DATE(d.DiagnosisDate), d.DiagnosisDetails
+                FROM Diagnosis d
+                LEFT JOIN Patients p ON d.PatientID = p.PatientID
+                LEFT JOIN Health_Workers hw ON d.DoctorID = hw.WorkerID
+                WHERE p.FullName LIKE %s OR d.DiagnosisDetails LIKE %s
+                ORDER BY d.DiagnosisID DESC
+            """, (f"%{q}%", f"%{q}%"))
+            for row in cursor.fetchall():
+                cleaned = ["" if val is None else str(val) for val in row]
+                self.table.insert("", "end", values=cleaned)
             conn.close()
         except Exception as e:
-            messagebox.showerror("Database Error", f"Failed to search diagnoses:\n{e}")
-
-    def select_diagnosis(self, event=None):
-        """When a row in the Treeview is clicked, load all its data into the form fields."""
-        selected_item = self.table.selection()
-        if not selected_item:
-            return
-
-        row_values = self.table.item(selected_item[0], "values")
-        if not row_values:
-            return
-
-        # Store the selected diagnosis ID
-        self.selected_diagnosis_id = row_values[0]
-
-        # Set the Patient ComboBox to match the selected row
-        patient_info = row_values[1]
-        patient_values = self.patient_combo.cget("values")
-        if patient_info in patient_values:
-            self.patient_combo.set(patient_info)
-        else:
-            for val in patient_values:
-                if val.startswith(patient_info.split(" - ")[0] + " "):
-                    self.patient_combo.set(val)
-                    break
-
-        # Set the Health Worker ComboBox to match the selected row
-        worker_info = row_values[2]
-        worker_values = self.worker_combo.cget("values")
-        if worker_info in worker_values:
-            self.worker_combo.set(worker_info)
-        else:
-            for val in worker_values:
-                if val.startswith(worker_info.split(" - ")[0] + " "):
-                    self.worker_combo.set(val)
-                    break
-
-        # Set the Diagnosis Date
-        self.date_entry.delete(0, "end")
-        self.date_entry.insert(0, row_values[3])
-
-        # Set the Description in the CTkTextbox
-        self.description_textbox.delete("1.0", "end")
-        self.description_textbox.insert("1.0", row_values[4])
-
-    def clear_fields(self):
-        """Clear all form fields and reset the ComboBoxes and Treeview selection."""
-        self.selected_diagnosis_id = None
-
-        # Clear the Date field
-        self.date_entry.delete(0, "end")
-
-        # Clear the Description textbox
-        self.description_textbox.delete("1.0", "end")
-
-        # Clear the search entry
-        self.search_entry.delete(0, "end")
-
-        # Remove Treeview selection highlight
-        self.table.selection_remove(self.table.selection())
-
-        # Reset the Patient ComboBox to the first value
-        patient_values = self.patient_combo.cget("values")
-        if patient_values:
-            self.patient_combo.set(patient_values[0])
-
-        # Reset the Health Worker ComboBox to the first value
-        worker_values = self.worker_combo.cget("values")
-        if worker_values:
-            self.worker_combo.set(worker_values[0])
+            print(f"Error searching diagnoses: {e}")
 
     def refresh_table(self):
-        """Reload all diagnosis records from the database into the Treeview.
-        Also resets the Patient and Health Worker ComboBoxes."""
-        self.load_patients()
-        self.load_workers()
-        self.load_diagnosis()
+        self.search_entry.delete(0, "end")
+        self.load_diagnoses()
+        self.clear_fields()
 
 
 if __name__ == "__main__":
     class TestApp(ctk.CTk):
         def __init__(self):
             super().__init__()
-            self.geometry("1500x850")
+            self.geometry("1400x800")
             DiagnosisWindow(self)
 
     app = TestApp()

@@ -320,6 +320,12 @@ class AppointmentWindow(ctk.CTkToplevel):
             conn.commit()
             conn.close()
 
+            # Write audit log
+            import session
+            user_id = session.current_user.get("user_id", 1) if (session and session.current_user) else 1
+            from database import log_audit_action
+            log_audit_action(user_id, f"Created appointment for PatientID: {patient_id} assigned to Doctor ID: {worker_id}")
+
             messagebox.showinfo("Success", "Appointment added successfully!")
             self.load_appointments()
             self.clear_fields()

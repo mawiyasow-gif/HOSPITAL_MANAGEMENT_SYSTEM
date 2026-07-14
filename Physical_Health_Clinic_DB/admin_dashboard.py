@@ -69,6 +69,7 @@ class AdminDashboard(ctk.CTk):
             ("💳 Payment", "open_payment"),
             ("🧾 Receipt", "open_receipt"),
             ("📊 Reports", "open_reports"),
+            ("🏥 Services Catalog", "open_services"),
             ("👤 User Management", "open_user_management"),
             ("⚙️ Settings", "open_settings")
         ]
@@ -944,6 +945,11 @@ class AdminDashboard(ctk.CTk):
     def open_reports(self):
         """Open the Reports module (placeholder)."""
         messagebox.showinfo("Reports Module", "Reports module will be implemented in reports.py")
+
+    def open_services(self):
+        """Open the Hospital Services Management module."""
+        from services import HospitalServicesWindow
+        HospitalServicesWindow(self)
 
     def open_user_management(self):
         """Open the User Management module."""

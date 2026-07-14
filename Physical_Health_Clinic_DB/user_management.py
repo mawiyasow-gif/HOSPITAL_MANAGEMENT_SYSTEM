@@ -1,6 +1,7 @@
 import customtkinter as ctk
 from tkinter import ttk, messagebox
 from database import connect_db
+import hashlib
 
 ctk.set_appearance_mode("Light")
 ctk.set_default_color_theme("blue")
@@ -98,9 +99,9 @@ class UserManagementWindow(ctk.CTkToplevel):
         self.role_combo = ctk.CTkComboBox(
             form_frame,
             width=320,
-            values=["Administrator", "Doctor", "Receptionist", "Nurse", "Pharmacist", "Accountant"]
+            values=["Administrator", "Doctor", "Receptionist", "Laboratory Technician", "Pharmacist", "Accountant"]
         )
-        self.role_combo.set("Nurse")
+        self.role_combo.set("Doctor")
         self.role_combo.pack(pady=3)
 
         # Email
@@ -318,11 +319,14 @@ class UserManagementWindow(ctk.CTkToplevel):
                 conn.close()
                 return
 
+            # Hash password using SHA-256
+            hashed_password = hashlib.sha256(password.encode('utf-8')).hexdigest()
+
             query = """
                 INSERT INTO Users (FullName, username, Password, Role, Email, Phone, Gender, Status)
                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
             """
-            cursor.execute(query, (fullname, username, password, role, email, phone, gender, status))
+            cursor.execute(query, (fullname, username, hashed_password, role, email, phone, gender, status))
             new_users_id = cursor.lastrowid
 
             # Sync with Health_Workers table
@@ -422,7 +426,9 @@ class UserManagementWindow(ctk.CTkToplevel):
         try:
             conn = connect_db()
             cursor = conn.cursor()
-            cursor.execute("UPDATE Users SET Password=%s WHERE UsersID=%s", (password, self.selected_user_id))
+            # Hash password using SHA-256
+            hashed_password = hashlib.sha256(password.encode('utf-8')).hexdigest()
+            cursor.execute("UPDATE Users SET Password=%s WHERE UsersID=%s", (hashed_password, self.selected_user_id))
             conn.commit()
             conn.close()
 
@@ -522,7 +528,7 @@ class UserManagementWindow(ctk.CTkToplevel):
         self.password_entry.delete(0, "end")
         self.email_entry.delete(0, "end")
         self.phone_entry.delete(0, "end")
-        self.role_combo.set("Nurse")
+        self.role_combo.set("Doctor")
         self.gender_combo.set("Male")
         self.status_combo.set("Active")
         self.search_entry.delete(0, "end")

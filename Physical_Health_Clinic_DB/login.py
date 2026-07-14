@@ -1,5 +1,7 @@
 import customtkinter as ctk
 from tkinter import messagebox
+import mysql.connector
+import hashlib
 from database import connect_db
 
 ctk.set_appearance_mode("light")
@@ -101,6 +103,9 @@ class LoginApp(ctk.CTk):
             conn = connect_db()
             cursor = conn.cursor()
 
+            # Hash the input password using SHA-256
+            hashed_password = hashlib.sha256(password.encode('utf-8')).hexdigest()
+
             # Query to join Users and Health_Workers to get IDs, FullName, Role, and Status
             query = """
                 SELECT u.UsersID, hw.WorkerID, u.FullName, u.Role, u.Status, u.Phone, u.Gender
@@ -108,7 +113,7 @@ class LoginApp(ctk.CTk):
                 LEFT JOIN Health_Workers hw ON u.UsersID = hw.UsersID
                 WHERE u.username = %s AND u.Password = %s
             """
-            cursor.execute(query, (user, password))
+            cursor.execute(query, (user, hashed_password))
             result = cursor.fetchone()
 
             if result:
@@ -146,6 +151,8 @@ class LoginApp(ctk.CTk):
                 }
                 import session
                 session.current_user = current_user
+                from database import log_audit_action
+                log_audit_action(user_id, f"User '{user}' logged in successfully.")
 
                 # Route to appropriate dashboard based on Role
                 if role == "Administrator":
@@ -157,9 +164,9 @@ class LoginApp(ctk.CTk):
                 elif role == "Receptionist":
                     from receptionist_dashboard import ReceptionistDashboard
                     app = ReceptionistDashboard(receptionist_user=current_user)
-                elif role == "Nurse":
-                    from nurse_dashboard import NurseDashboard
-                    app = NurseDashboard(nurse_user=current_user)
+                elif role == "Laboratory Technician":
+                    from laboratory_technician_dashboard import LaboratoryTechnicianDashboard
+                    app = LaboratoryTechnicianDashboard(lab_user=current_user)
                 elif role == "Pharmacist":
                     from pharmacist_dashboard import PharmacistDashboard
                     app = PharmacistDashboard(pharmacist_user=current_user)

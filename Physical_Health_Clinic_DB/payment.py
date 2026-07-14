@@ -1,32 +1,37 @@
 import customtkinter as ctk
 from tkinter import ttk, messagebox
-from datetime import datetime
 from database import connect_db
+from datetime import datetime
+import session
 
-# -----------------------------
-# CustomTkinter Settings
-# -----------------------------
 ctk.set_appearance_mode("Light")
 ctk.set_default_color_theme("blue")
 
-
 class PaymentWindow(ctk.CTkToplevel):
-    """Payment Management Window for the Physical Health Clinic Record System."""
+    """Payment & Billing Management Workspace."""
 
     def __init__(self, parent):
         super().__init__(parent)
+        self.master = parent
 
-        self.title("💰 Payment Management")
+        self.title("Payment & Billing Management")
         self.geometry("1500x850")
         self.resizable(True, True)
+        self.transient(parent)
+        self.grab_set()
 
-        # Track selected payment ID
         self.selected_payment_id = None
+        self.selected_patient_id = None
+        self.selected_amount = 0.00
 
-        # ==============================
+        # Retrieve logged-in worker ID
+        self.worker_id = 2
+        self.user_id = 1
+        if hasattr(session, "current_user") and session.current_user:
+            self.worker_id = session.current_user.get("worker_id", 2)
+            self.user_id = session.current_user.get("user_id", 1)
+
         # Back Button
-        # ==============================
-
         back_btn = ctk.CTkButton(
             self,
             text="⬅ Back",
@@ -35,657 +40,363 @@ class PaymentWindow(ctk.CTkToplevel):
         )
         back_btn.place(x=20, y=20)
 
-        # ==============================
-        # Window Title
-        # ==============================
-
+        # Title
         title = ctk.CTkLabel(
             self,
-            text="💰 Payment Management",
+            text="💳 Payment & Billing Center",
             font=("Arial", 30, "bold")
         )
         title.pack(pady=20)
 
-        # ==============================
-        # Main Frame
-        # ==============================
-
+        # Main Layout Frame
         main_frame = ctk.CTkFrame(self)
         main_frame.pack(fill="both", expand=True, padx=20, pady=20)
 
-        # ==============================
-        # Left Panel (Payment Form)
-        # ==============================
+        # Tabview for Form (Process Pending vs Create Manual Service Invoice)
+        self.form_tabview = ctk.CTkTabview(main_frame, width=420)
+        self.form_tabview.pack(side="left", fill="y", padx=15, pady=15)
+        
+        self.tab_process = self.form_tabview.add("Process Pending Billing")
+        self.tab_create = self.form_tabview.add("Add Service Invoice")
 
-        form_frame = ctk.CTkFrame(main_frame, width=420)
-        form_frame.pack(side="left", fill="y", padx=15, pady=15)
+        self.setup_process_tab()
+        self.setup_create_tab()
 
-        ctk.CTkLabel(
-            form_frame,
-            text="Payment Information",
-            font=("Arial", 22, "bold")
-        ).pack(pady=20)
+        # Right Panel (List Payments)
+        self.table_frame = ctk.CTkFrame(main_frame)
+        self.table_frame.pack(side="right", fill="both", expand=True, padx=15, pady=15)
 
-        # Patient ComboBox
-        ctk.CTkLabel(
-            form_frame,
-            text="Select Patient:",
-            font=("Arial", 14)
-        ).pack(pady=(10, 2), anchor="w", padx=50)
+        # Search Bar
+        search_frame = ctk.CTkFrame(self.table_frame, fg_color="transparent")
+        search_frame.pack(fill="x", padx=15, pady=10)
 
-        self.patient_combo = ctk.CTkComboBox(form_frame, width=320, values=[])
-        self.patient_combo.pack(pady=5)
+        self.search_entry = ctk.CTkEntry(search_frame, placeholder_text="Search by Patient Name or ID...", width=300)
+        self.search_entry.pack(side="left")
+        self.search_entry.bind("<KeyRelease>", self.search_payment)
 
-        # Amount Paid Entry
-        ctk.CTkLabel(
-            form_frame,
-            text="Amount Paid:",
-            font=("Arial", 14)
-        ).pack(pady=(10, 2), anchor="w", padx=50)
+        ctk.CTkButton(search_frame, text="Search", command=self.search_payment, width=100).pack(side="left", padx=10)
+        ctk.CTkButton(search_frame, text="Refresh", command=self.refresh_table, width=100).pack(side="left")
 
-        self.amount_entry = ctk.CTkEntry(
-            form_frame,
-            width=320,
-            placeholder_text="Enter amount (e.g., 5000)"
-        )
-        self.amount_entry.pack(pady=5)
+        # Treeview setup
+        container = ctk.CTkFrame(self.table_frame, fg_color="transparent")
+        container.pack(fill="both", expand=True, padx=15, pady=5)
 
-        # Payment Date Entry
-        ctk.CTkLabel(
-            form_frame,
-            text="Payment Date (YYYY-MM-DD HH:MM:SS):",
-            font=("Arial", 14)
-        ).pack(pady=(10, 2), anchor="w", padx=50)
+        scrollbar = ttk.Scrollbar(container)
+        scrollbar.pack(side="right", fill="y")
 
-        self.date_entry = ctk.CTkEntry(
-            form_frame,
-            width=320,
-            placeholder_text="Auto-filled on Add Payment"
-        )
-        self.date_entry.pack(pady=5)
-
-        # Payment Method ComboBox
-        ctk.CTkLabel(
-            form_frame,
-            text="Payment Method:",
-            font=("Arial", 14)
-        ).pack(pady=(10, 2), anchor="w", padx=50)
-
-        payment_methods = [
-            "Cash",
-            "Orange Money",
-            "AfriMoney",
-            "QMoney",
-            "Wave",
-            "Bank Transfer",
-            "Credit Card",
-            "Debit Card"
-        ]
-        self.payment_method_combo = ctk.CTkComboBox(
-            form_frame,
-            width=320,
-            values=payment_methods
-        )
-        self.payment_method_combo.pack(pady=5)
-
-        # ==============================
-        # Action Buttons
-        # ==============================
-
-        button_frame = ctk.CTkFrame(form_frame, fg_color="transparent")
-        button_frame.pack(pady=25)
-
-        ctk.CTkButton(
-            button_frame,
-            text="➕ Add Payment",
-            width=140,
-            command=self.add_payment
-        ).grid(row=0, column=0, padx=5, pady=5)
-
-        ctk.CTkButton(
-            button_frame,
-            text="✏️ Update",
-            width=140,
-            command=self.update_payment
-        ).grid(row=0, column=1, padx=5, pady=5)
-
-        ctk.CTkButton(
-            button_frame,
-            text="❌ Delete",
-            width=140,
-            command=self.delete_payment
-        ).grid(row=1, column=0, padx=5, pady=5)
-
-        ctk.CTkButton(
-            button_frame,
-            text="🧹 Clear",
-            width=140,
-            command=self.clear_fields
-        ).grid(row=1, column=1, padx=5, pady=5)
-
-        # Generate Receipt Button
-        ctk.CTkButton(
-            button_frame,
-            text="🖨️ Generate Receipt",
-            width=290,
-            command=self.generate_receipt
-        ).grid(row=2, column=0, columnspan=2, padx=5, pady=5)
-
-        # ==============================
-        # Right Panel (Treeview Table)
-        # ==============================
-
-        table_frame = ctk.CTkFrame(main_frame)
-        table_frame.pack(side="right", fill="both", expand=True, padx=15, pady=15)
-
-        # Search bar at top of right panel
-        search_frame = ctk.CTkFrame(table_frame)
-        search_frame.pack(fill="x", pady=10)
-
-        ctk.CTkLabel(
-            search_frame,
-            text="🔍 Search:",
-            font=("Arial", 14)
-        ).pack(side="left", padx=10)
-
-        self.search_entry = ctk.CTkEntry(
-            search_frame,
-            width=300,
-            placeholder_text="Patient Name, Payment Method, or Date"
-        )
-        self.search_entry.pack(side="left", padx=5)
-
-        ctk.CTkButton(
-            search_frame,
-            text="Search",
-            width=100,
-            command=self.search_payment
-        ).pack(side="left", padx=5)
-
-        ctk.CTkButton(
-            search_frame,
-            text="🔄 Refresh",
-            width=100,
-            command=self.refresh_table
-        ).pack(side="left", padx=5)
-
-        # Payment count label
-        self.count_label = ctk.CTkLabel(
-            search_frame,
-            text="Total Payments: 0",
-            font=("Arial", 14, "bold"),
-            text_color="#1F6AA5"
-        )
-        self.count_label.pack(side="right", padx=20)
-
-        # Total amount label
-        self.total_label = ctk.CTkLabel(
-            search_frame,
-            text="Total Amount: Le 0",
-            font=("Arial", 14, "bold"),
-            text_color="#1F6AA5"
-        )
-        self.total_label.pack(side="right", padx=20)
-
-        # Treeview columns
-        columns = (
-            "Payment ID",
-            "Patient",
-            "Amount Paid",
-            "Payment Date",
-            "Payment Method"
-        )
-
-        # Style Treeview table (dark theme consistent with other modules)
-        style = ttk.Style()
-        style.theme_use("clam")
-        style.configure(
-            "Treeview",
-            background="#2b2b2b",
-            foreground="white",
-            fieldbackground="#2b2b2b",
-            rowheight=35,
-            font=("Arial", 13)
-        )
-        style.map(
-            "Treeview",
-            background=[("selected", "#1F6AA5")],
-            foreground=[("selected", "white")]
-        )
-        style.configure(
-            "Treeview.Heading",
-            background="#1f1f1f",
-            foreground="white",
-            font=("Arial", 14, "bold"),
-            relief="flat"
-        )
-        style.map(
-            "Treeview.Heading",
-            background=[("active", "#2d2d2d")]
-        )
-
-        # Create Treeview widget
+        columns = ("ID", "Patient Name", "Amount", "Type", "Status / Method", "Billing Date")
         self.table = ttk.Treeview(
-            table_frame,
+            container,
             columns=columns,
             show="headings",
-            height=20
+            yscrollcommand=scrollbar.set,
+            height=18
         )
-
         for col in columns:
-            self.table.heading(col, text=col, anchor="center")
-            self.table.column(col, width=120, anchor="center")
+            self.table.heading(col, text=col, anchor="w")
+            self.table.column(col, anchor="w", width=120)
+        self.table.column("ID", width=50, anchor="center")
 
-        # Make Patient and Payment Method columns wider
-        self.table.column("Patient", width=200, anchor="center")
-        self.table.column("Payment Method", width=150, anchor="center")
-
-        # Vertical scrollbar
-        v_scrollbar = ttk.Scrollbar(
-            table_frame,
-            orient="vertical",
-            command=self.table.yview
-        )
-
-        # Horizontal scrollbar
-        h_scrollbar = ttk.Scrollbar(
-            table_frame,
-            orient="horizontal",
-            command=self.table.xview
-        )
-
-        self.table.configure(
-            yscrollcommand=v_scrollbar.set,
-            xscrollcommand=h_scrollbar.set
-        )
-
-        # Pack scrollbars and treeview
-        h_scrollbar.pack(side="bottom", fill="x")
         self.table.pack(side="left", fill="both", expand=True)
-        v_scrollbar.pack(side="right", fill="y")
+        scrollbar.config(command=self.table.yview)
 
-        # Bind row selection to populate the form
-        self.table.bind("<<TreeviewSelect>>", self.select_payment)
+        # Selection Bind
+        self.table.bind("<<TreeviewSelect>>", self.on_payment_selected)
 
-        # Load initial data into ComboBoxes and Treeview
-        self.load_patients()
+        # Load initial values
         self.load_payments()
 
-    # ==============================
-    # Helper Methods
-    # ==============================
+    def setup_process_tab(self):
+        # UI controls to complete a pending payment
+        ctk.CTkLabel(self.tab_process, text="Process Selected Pending Payment", font=("Arial", 14, "bold"), text_color="#1F6AA5").pack(pady=10)
 
-    def extract_id(self, combo_value):
-        """Extract the integer ID from a ComboBox display string like '1 - Alhaji Mawiya Sow'."""
-        if not combo_value:
-            return None
-        try:
-            return int(combo_value.split(" - ")[0])
-        except (IndexError, ValueError):
-            return None
+        # Labels displaying selected info
+        self.selected_patient_lbl = ctk.CTkLabel(self.tab_process, text="Patient: None selected", font=("Arial", 12, "bold"))
+        self.selected_patient_lbl.pack(pady=8, anchor="w", padx=20)
 
-    # ==============================
-    # Data Loading Methods
-    # ==============================
+        self.selected_type_lbl = ctk.CTkLabel(self.tab_process, text="Billing Type: N/A", font=("Arial", 12))
+        self.selected_type_lbl.pack(pady=5, anchor="w", padx=20)
+
+        self.selected_amount_lbl = ctk.CTkLabel(self.tab_process, text="Amount Due: Le 0.00", font=("Arial", 13, "bold"), text_color="#1F6AA5")
+        self.selected_amount_lbl.pack(pady=8, anchor="w", padx=20)
+
+        # Select Payment Method
+        ctk.CTkLabel(self.tab_process, text="Select Payment Method:", font=("Arial", 12, "bold")).pack(anchor="w", padx=20, pady=(15, 2))
+        self.method_combo = ctk.CTkComboBox(self.tab_process, width=320, values=["Cash", "Card", "Mobile Money"])
+        self.method_combo.pack(pady=5)
+        self.method_combo.set("Cash")
+
+        # Process Button
+        self.process_btn = ctk.CTkButton(
+            self.tab_process,
+            text="🔒 Collect Payment & Print",
+            font=("Arial", 13, "bold"),
+            fg_color="gray",
+            state="disabled",
+            command=self.complete_payment,
+            height=38
+        )
+        self.process_btn.pack(pady=30, padx=20, fill="x")
+
+    def setup_create_tab(self):
+        # UI controls to manually issue an invoice for registration, consultation, or active hospital service
+        ctk.CTkLabel(self.tab_create, text="Add Walk-in Service Invoice", font=("Arial", 14, "bold"), text_color="#1F6AA5").pack(pady=10)
+
+        # Patient Combo
+        ctk.CTkLabel(self.tab_create, text="Select Patient:", font=("Arial", 12, "bold")).pack(anchor="w", padx=20, pady=(5, 2))
+        self.patient_combo = ctk.CTkComboBox(self.tab_create, width=320, values=[])
+        self.patient_combo.pack(pady=5)
+        
+        self.load_patients()
+
+        # Service Combo
+        ctk.CTkLabel(self.tab_create, text="Select Service:", font=("Arial", 12, "bold")).pack(anchor="w", padx=20, pady=(10, 2))
+        self.service_combo = ctk.CTkComboBox(self.tab_create, width=320, values=[], command=self.on_service_selected)
+        self.service_combo.pack(pady=5)
+
+        self.load_services()
+
+        # Service Price (read-only, fetched from Hospital_Services)
+        ctk.CTkLabel(self.tab_create, text="Service Price (Le):", font=("Arial", 12, "bold")).pack(anchor="w", padx=20, pady=(10, 2))
+        self.service_price_entry = ctk.CTkEntry(self.tab_create, width=320)
+        self.service_price_entry.pack(pady=5)
+        self.service_price_entry.configure(state="disabled")
+
+        # Create invoice button
+        ctk.CTkButton(
+            self.tab_create,
+            text="➕ Create Invoice",
+            font=("Arial", 13, "bold"),
+            command=self.create_manual_invoice,
+            height=38
+        ).pack(pady=30, padx=20, fill="x")
 
     def load_patients(self):
-        """Load all patients from the Patients table into the Patient ComboBox."""
         try:
             conn = connect_db()
             cursor = conn.cursor()
-            query = "SELECT PatientID, FullName FROM Patients ORDER BY PatientID"
-            cursor.execute(query)
+            cursor.execute("SELECT PatientID, FullName FROM Patients ORDER BY PatientID DESC")
             rows = cursor.fetchall()
-
-            patient_list = []
-            for row in rows:
-                patient_list.append(f"{row[0]} - {row[1]}")
-
-            self.patient_combo.configure(values=patient_list)
-            if patient_list:
-                self.patient_combo.set(patient_list[0])
             conn.close()
+            
+            pat_list = [f"{name} (ID: {pid})" for pid, name in rows]
+            self.patient_combo.configure(values=pat_list)
+            if pat_list:
+                self.patient_combo.set(pat_list[0])
         except Exception as e:
-            messagebox.showerror("Database Error", f"Failed to load patients:\n{e}")
+            print(f"Error loading patients combo: {e}")
+
+    def load_services(self):
+        try:
+            conn = connect_db()
+            cursor = conn.cursor()
+            cursor.execute("SELECT ServiceID, ServiceName, Price FROM Hospital_Services WHERE Status = 'Active'")
+            rows = cursor.fetchall()
+            conn.close()
+            
+            svc_list = [f"{name} (ID: {sid} | Le {price:,.2f})" for sid, name, price in rows]
+            self.service_combo.configure(values=svc_list)
+            if svc_list:
+                self.service_combo.set(svc_list[0])
+                self.on_service_selected(svc_list[0])
+        except Exception as e:
+            print(f"Error loading services combo: {e}")
+
+    def on_service_selected(self, value):
+        try:
+            price_val = value.split("| Le ")[1].replace(",", "").replace(")", "")
+            self.service_price_entry.configure(state="normal")
+            self.service_price_entry.delete(0, "end")
+            self.service_price_entry.insert(0, price_val)
+            self.service_price_entry.configure(state="disabled")
+        except Exception as e:
+            print(f"Error extracting price: {e}")
 
     def load_payments(self):
-        """Fetch all payment records from the database and populate the Treeview."""
-        # Clear existing items in the treeview
         for item in self.table.get_children():
             self.table.delete(item)
 
         try:
             conn = connect_db()
             cursor = conn.cursor()
-            query = """
-                SELECT 
-                    p.PaymentID,
-                    pat.FullName AS PatientName,
-                    p.Amount,
-                    p.PaymentDate,
-                    p.PaymentMethod
-                FROM Payments p
+            cursor.execute("""
+                SELECT p.PaymentID, pat.FullName, p.Amount, p.PaymentType, p.PaymentMethod, p.PaymentDate
+                FROM Payment p
                 LEFT JOIN Patients pat ON p.PatientID = pat.PatientID
                 ORDER BY p.PaymentID DESC
-            """
-            cursor.execute(query)
-            rows = cursor.fetchall()
-
-            payment_count = 0
-            total_amount = 0.0
-
-            for row in rows:
-                payment_count += 1
-                total_amount += float(row[2])
-                cleaned_row = ["" if val is None else str(val) for val in row]
-                self.table.insert("", "end", values=cleaned_row)
-
-            # Update count and total labels
-            self.count_label.configure(text=f"Total Payments: {payment_count}")
-            self.total_label.configure(text=f"Total Amount: Le {total_amount:,.2f}")
-
+            """)
+            for row in cursor.fetchall():
+                cleaned = ["" if val is None else str(val) for val in row]
+                cleaned[2] = f"Le {float(cleaned[2]):,.2f}" if cleaned[2] else "Le 0.00"
+                self.table.insert("", "end", values=cleaned)
             conn.close()
         except Exception as e:
-            messagebox.showerror("Database Error", f"Failed to load payments:\n{e}")
+            print(f"Error loading payments: {e}")
 
-    # ==============================
-    # CRUD Operations
-    # ==============================
-
-    def add_payment(self):
-        """Validate all fields and save a new payment record to MySQL."""
-        patient_val = self.patient_combo.get()
-        amount_str = self.amount_entry.get().strip()
-        payment_date = self.date_entry.get().strip()
-        payment_method = self.payment_method_combo.get()
-
-        # Extract patient ID from ComboBox display string
-        patient_id = self.extract_id(patient_val)
-
-        # Validate all required fields are filled
-        if not patient_id:
-            messagebox.showerror("Validation Error", "Please select a valid patient.")
+    def on_payment_selected(self, event):
+        selected = self.table.selection()
+        if not selected:
             return
-        if not amount_str:
-            messagebox.showerror("Validation Error", "Please enter the amount paid.")
-            return
-        if not payment_method:
-            messagebox.showerror("Validation Error", "Please select a payment method.")
-            return
+        
+        row = self.table.item(selected[0], "values")
+        self.selected_payment_id = int(row[0])
+        
+        # Display selection details
+        self.selected_patient_lbl.configure(text=f"Patient: {row[1]}")
+        self.selected_type_lbl.configure(text=f"Billing Type: {row[3]}")
+        self.selected_amount_lbl.configure(text=f"Amount Due: {row[2]}")
+        
+        self.selected_amount = float(row[2].replace("Le ", "").replace(",", ""))
 
-        # Validate amount is numeric and greater than zero
-        try:
-            amount = float(amount_str)
-            if amount <= 0:
-                messagebox.showerror("Validation Error", "Amount must be greater than zero.")
-                return
-            # Convert to integer if it's a whole number
-            if amount == int(amount):
-                amount = int(amount)
-        except ValueError:
-            messagebox.showerror("Validation Error", "Amount must be a valid number.")
-            return
-
-        # Auto-fill date if not provided
-        if not payment_date:
-            payment_date = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            self.date_entry.delete(0, "end")
-            self.date_entry.insert(0, payment_date)
+        # Check status
+        if row[4] == "Pending":
+            self.process_btn.configure(state="normal", fg_color="#4CAF50")
+            self.process_btn.configure(text="🔒 Collect Payment & Print")
         else:
-            # Validate date format (YYYY-MM-DD HH:MM:SS)
-            try:
-                datetime.strptime(payment_date, "%Y-%m-%d %H:%M:%S")
-            except ValueError:
-                messagebox.showerror(
-                    "Validation Error",
-                    "Invalid date format. Please use YYYY-MM-DD HH:MM:SS."
-                )
-                return
+            self.process_btn.configure(state="disabled", fg_color="gray")
+            self.process_btn.configure(text="🔒 Invoice Paid Already")
+
+    def create_manual_invoice(self):
+        pat_val = self.patient_combo.get()
+        svc_val = self.service_combo.get()
+        
+        if not pat_val or not svc_val:
+            messagebox.showerror("Error", "Select both patient and service.")
+            return
 
         try:
+            patient_id = int(pat_val.split(" (ID: ")[1].replace(")", ""))
+            service_id = int(svc_val.split(" (ID: ")[1].split(" |")[0])
+            price = float(self.service_price_entry.get())
+            service_name = svc_val.split(" (ID: ")[0]
+
+            confirm = messagebox.askyesno("Confirm Invoice", f"Generate pending payment of Le {price:,.2f} for patient '{pat_val.split(' (ID')[0]}'?")
+            if not confirm:
+                return
+
             conn = connect_db()
             cursor = conn.cursor()
-            query = """
-                INSERT INTO Payments (PatientID, Amount, PaymentDate, PaymentMethod)
-                VALUES (%s, %s, %s, %s)
-            """
-            cursor.execute(query, (patient_id, amount, payment_date, payment_method))
+            cursor.execute("""
+                INSERT INTO Payment (PatientID, Amount, PaymentType, ServiceID, LabRequestID, DispensingID, PaymentMethod, PaymentDate, BilledBy)
+                VALUES (%s, %s, %s, %s, NULL, NULL, 'Pending', CURRENT_TIMESTAMP, %s)
+            """, (patient_id, price, "Hospital Service", service_id, self.worker_id))
             conn.commit()
             conn.close()
 
-            messagebox.showinfo("Success", "Payment added successfully!")
+            messagebox.showinfo("Success", "Pending service invoice added successfully!")
             self.load_payments()
             self.clear_fields()
         except Exception as e:
-            messagebox.showerror("Database Error", f"Failed to add payment:\n{e}")
+            messagebox.showerror("Database Error", f"Failed to insert manual invoice:\n{e}")
 
-    def update_payment(self):
-        """Update the selected payment record in the database."""
+    def complete_payment(self):
         if not self.selected_payment_id:
-            messagebox.showwarning(
-                "Selection Warning",
-                "Please select a payment from the table to update."
-            )
             return
-
-        patient_val = self.patient_combo.get()
-        amount_str = self.amount_entry.get().strip()
-        payment_date = self.date_entry.get().strip()
-        payment_method = self.payment_method_combo.get()
-
-        patient_id = self.extract_id(patient_val)
-
-        # Validate all required fields
-        if not patient_id:
-            messagebox.showerror("Validation Error", "Please select a valid patient.")
-            return
-        if not amount_str:
-            messagebox.showerror("Validation Error", "Please enter the amount paid.")
-            return
-        if not payment_method:
-            messagebox.showerror("Validation Error", "Please select a payment method.")
-            return
-
-        # Validate amount is numeric and greater than zero
-        try:
-            amount = float(amount_str)
-            if amount <= 0:
-                messagebox.showerror("Validation Error", "Amount must be greater than zero.")
-                return
-            if amount == int(amount):
-                amount = int(amount)
-        except ValueError:
-            messagebox.showerror("Validation Error", "Amount must be a valid number.")
-            return
-
-        # Validate date format
-        if payment_date:
-            try:
-                datetime.strptime(payment_date, "%Y-%m-%d %H:%M:%S")
-            except ValueError:
-                messagebox.showerror(
-                    "Validation Error",
-                    "Invalid date format. Please use YYYY-MM-DD HH:MM:SS."
-                )
-                return
-
-        try:
-            conn = connect_db()
-            cursor = conn.cursor()
-            query = """
-                UPDATE Payments
-                SET PatientID = %s, Amount = %s, PaymentDate = %s, PaymentMethod = %s
-                WHERE PaymentID = %s
-            """
-            cursor.execute(query, (
-                patient_id, amount, payment_date, payment_method,
-                self.selected_payment_id
-            ))
-            conn.commit()
-            conn.close()
-
-            messagebox.showinfo("Success", "Payment updated successfully!")
-            self.load_payments()
-            self.clear_fields()
-        except Exception as e:
-            messagebox.showerror("Database Error", f"Failed to update payment:\n{e}")
-
-    def delete_payment(self):
-        """Delete the selected payment record after user confirmation."""
-        if not self.selected_payment_id:
-            messagebox.showwarning(
-                "Selection Warning",
-                "Please select a payment from the table to delete."
-            )
-            return
-
-        confirm = messagebox.askyesno(
-            "Confirm Delete",
-            "Are you sure you want to delete this payment?"
-        )
+            
+        method = self.method_combo.get()
+        
+        confirm = messagebox.askyesno("Confirm Collection", f"Confirm payment collection of Le {self.selected_amount:,.2f} via {method}?")
         if not confirm:
             return
 
         try:
             conn = connect_db()
             cursor = conn.cursor()
-            query = "DELETE FROM Payments WHERE PaymentID = %s"
-            cursor.execute(query, (self.selected_payment_id,))
+
+            # 1. Update Payment status
+            cursor.execute("""
+                UPDATE Payment 
+                SET PaymentMethod = %s, PaymentDate = CURRENT_TIMESTAMP 
+                WHERE PaymentID = %s
+            """, (method, self.selected_payment_id))
+
+            # 2. Insert into Receipt
+            cursor.execute("""
+                INSERT INTO Receipt (PaymentID, IssueDate, PrintedBy)
+                VALUES (%s, CURRENT_TIMESTAMP, %s)
+            """, (self.selected_payment_id, self.worker_id))
+            receipt_id = cursor.lastrowid
+
+            # 3. Retrieve PatientID from Payment
+            cursor.execute("SELECT PatientID FROM Payment WHERE PaymentID = %s", (self.selected_payment_id,))
+            patient_id = cursor.fetchone()[0]
+
             conn.commit()
             conn.close()
 
-            messagebox.showinfo("Success", "Payment deleted successfully!")
+            # Write audit logs
+            from database import log_audit_action
+            log_audit_action(self.user_id, f"Collected payment of Le {self.selected_amount:,.2f} for PatientID: {patient_id} (PaymentID: {self.selected_payment_id})")
+            log_audit_action(self.user_id, f"Generated and printed receipt (ReceiptID: {receipt_id}) for PatientID: {patient_id}")
+
+            messagebox.showinfo("Success", f"Payment completed successfully!\nReceipt ID: #{receipt_id}")
+            
+            # Print receipt PDF preview
+            print_confirm = messagebox.askyesno("Print Receipt", "Would you like to print/export this Receipt as PDF now?")
+            if print_confirm:
+                self.open_receipt_print_dialog(receipt_id)
+
             self.load_payments()
             self.clear_fields()
+            
+            # Refresh receptionist dashboard parent metrics
+            if hasattr(self.master, "refresh_dashboard"):
+                self.master.refresh_dashboard()
+                
         except Exception as e:
-            messagebox.showerror("Database Error", f"Failed to delete payment:\n{e}")
+            messagebox.showerror("Database Error", f"Failed to complete payment transaction:\n{e}")
 
-    def search_payment(self):
-        """Search for payments by Patient Name, Payment Method, or Payment Date."""
-        search_query = self.search_entry.get().strip()
+    def open_receipt_print_dialog(self, receipt_id):
+        from receipt import ReceiptWindow
+        r_win = ReceiptWindow(self)
+        r_win.selected_receipt_id = receipt_id
+        r_win.load_selected_receipt_details(receipt_id)
 
-        if not search_query:
-            messagebox.showwarning("Search Warning", "Please enter a search term.")
+    def search_payment(self, event=None):
+        q = self.search_entry.get().strip()
+        if not q:
+            self.load_payments()
             return
-
-        # Clear existing items in the treeview
+            
         for item in self.table.get_children():
             self.table.delete(item)
-
+            
         try:
             conn = connect_db()
             cursor = conn.cursor()
-            query = """
-                SELECT 
-                    p.PaymentID,
-                    pat.FullName AS PatientName,
-                    p.Amount,
-                    p.PaymentDate,
-                    p.PaymentMethod
-                FROM Payments p
+            cursor.execute("""
+                SELECT p.PaymentID, pat.FullName, p.Amount, p.PaymentType, p.PaymentMethod, p.PaymentDate
+                FROM Payment p
                 LEFT JOIN Patients pat ON p.PatientID = pat.PatientID
-                WHERE pat.FullName LIKE %s
-                   OR p.PaymentMethod LIKE %s
-                   OR p.PaymentDate LIKE %s
+                WHERE pat.FullName LIKE %s OR p.PaymentID LIKE %s
                 ORDER BY p.PaymentID DESC
-            """
-            like_val = f"%{search_query}%"
-            cursor.execute(query, (like_val, like_val, like_val))
-            rows = cursor.fetchall()
-
-            payment_count = 0
-            total_amount = 0.0
-
-            for row in rows:
-                payment_count += 1
-                total_amount += float(row[2])
-                cleaned_row = ["" if val is None else str(val) for val in row]
-                self.table.insert("", "end", values=cleaned_row)
-
-            # Update count and total labels
-            self.count_label.configure(text=f"Found Payments: {payment_count}")
-            self.total_label.configure(text=f"Total Amount: Le {total_amount:,.2f}")
-
+            """, (f"%{q}%", f"%{q}%"))
+            for row in cursor.fetchall():
+                cleaned = ["" if val is None else str(val) for val in row]
+                cleaned[2] = f"Le {float(cleaned[2]):,.2f}" if cleaned[2] else "Le 0.00"
+                self.table.insert("", "end", values=cleaned)
             conn.close()
         except Exception as e:
-            messagebox.showerror("Database Error", f"Failed to search payments:\n{e}")
-
-    def select_payment(self, event):
-        """Load the selected payment from the Treeview into the form fields."""
-        selected_item = self.table.selection()
-        if not selected_item:
-            return
-
-        row_values = self.table.item(selected_item[0], "values")
-        self.selected_payment_id = row_values[0]
-
-        # Set the Patient ComboBox to match the selected row
-        patient_name = row_values[1]
-        patient_values = self.patient_combo.cget("values")
-        for val in patient_values:
-            if patient_name in val:
-                self.patient_combo.set(val)
-                break
-
-        # Set the Amount Paid
-        self.amount_entry.delete(0, "end")
-        self.amount_entry.insert(0, row_values[2])
-
-        # Set the Payment Date
-        self.date_entry.delete(0, "end")
-        self.date_entry.insert(0, row_values[3])
-
-        # Set the Payment Method
-        self.payment_method_combo.set(row_values[4])
+            print(f"Error searching payments: {e}")
 
     def clear_fields(self):
-        """Clear all form fields and reset the ComboBoxes and Treeview selection."""
         self.selected_payment_id = None
-
-        # Clear the Amount Paid field
-        self.amount_entry.delete(0, "end")
-
-        # Clear the Payment Date field
-        self.date_entry.delete(0, "end")
-
-        # Clear the search entry
-        self.search_entry.delete(0, "end")
-
-        # Remove Treeview selection highlight
+        self.selected_patient_id = None
+        self.selected_amount = 0.00
+        
+        self.selected_patient_lbl.configure(text="Patient: None selected")
+        self.selected_type_lbl.configure(text="Billing Type: N/A")
+        self.selected_amount_lbl.configure(text="Amount Due: Le 0.00")
+        
+        self.process_btn.configure(state="disabled", fg_color="gray")
+        self.process_btn.configure(text="🔒 Collect Payment & Print")
+        
         self.table.selection_remove(self.table.selection())
 
-        # Reset the Patient ComboBox to the first value
-        patient_values = self.patient_combo.cget("values")
-        if patient_values:
-            self.patient_combo.set(patient_values[0])
-
-        # Reset the Payment Method ComboBox to the first value
-        payment_method_values = self.payment_method_combo.cget("values")
-        if payment_method_values:
-            self.payment_method_combo.set(payment_method_values[0])
-
     def refresh_table(self):
-        """Reload all payment records from the database into the Treeview.
-        Also resets the Patient ComboBox."""
-        self.load_patients()
+        self.search_entry.delete(0, "end")
         self.load_payments()
-
-    def generate_receipt(self):
-        """Generate a receipt for the selected payment.
-        This will open the Receipt module (to be implemented separately)."""
-        if not self.selected_payment_id:
-            messagebox.showwarning(
-                "Selection Warning",
-                "Please select a payment from the table to generate a receipt."
-            )
-            return
-
-        # Placeholder for Receipt module integration
-        messagebox.showinfo(
-            "Receipt Generation",
-            f"Receipt generation for Payment ID: {self.selected_payment_id}\n\n"
-            "This feature will be implemented in the Receipt module."
-        )
+        self.clear_fields()
 
 
 if __name__ == "__main__":

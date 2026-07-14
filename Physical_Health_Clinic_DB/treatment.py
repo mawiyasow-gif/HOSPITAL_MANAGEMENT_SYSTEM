@@ -1,692 +1,394 @@
 import customtkinter as ctk
 from tkinter import ttk, messagebox
 from database import connect_db
+from datetime import datetime, timedelta
+import session
 
 ctk.set_appearance_mode("Light")
 ctk.set_default_color_theme("blue")
 
-
 class TreatmentWindow(ctk.CTkToplevel):
-    """Treatment Management Window for Physical Health Clinic Record System."""
+    """Treatment Management Panel (View/Edit) for Clinical Records."""
 
     def __init__(self, parent):
         super().__init__(parent)
+        self.master = parent
 
         self.title("Treatment Management")
-        self.geometry("1500x850")
+        self.geometry("1400x800")
         self.resizable(True, True)
+        self.transient(parent)
+        self.grab_set()
 
-        # Track selected treatment ID for updates and deletes
         self.selected_treatment_id = None
+        self.user_id = 1
+        if hasattr(session, "current_user") and session.current_user:
+            self.user_id = session.current_user.get("user_id", 1)
 
-        # ==============================
-        # Back Button (top-left corner)
-        # ==============================
-
-        back_btn = ctk.CTkButton(
-            self,
-            text="⬅ Back",
-            width=100,
-            command=self.destroy
-        )
+        # Back Button
+        back_btn = ctk.CTkButton(self, text="⬅ Back", width=100, command=self.destroy)
         back_btn.place(x=20, y=20)
 
-        # ==============================
-        # Window Title
-        # ==============================
+        # Title
+        ctk.CTkLabel(self, text="💊 Treatment Plans Catalog", font=("Arial", 30, "bold")).pack(pady=20)
 
-        title = ctk.CTkLabel(
-            self,
-            text="💊 Treatment Management",
-            font=("Arial", 30, "bold")
-        )
-        title.pack(pady=20)
-
-        # ==============================
-        # Main Frame
-        # ==============================
-
+        # Main Layout
         main_frame = ctk.CTkFrame(self)
         main_frame.pack(fill="both", expand=True, padx=20, pady=20)
 
-        # ==============================
-        # Left Panel (Treatment Form)
-        # ==============================
-
+        # Left Panel: Form
         form_frame = ctk.CTkFrame(main_frame, width=420)
         form_frame.pack(side="left", fill="y", padx=15, pady=15)
+        form_frame.pack_propagate(False)
 
-        ctk.CTkLabel(
-            form_frame,
-            text="Treatment Information",
-            font=("Arial", 22, "bold")
-        ).pack(pady=20)
+        ctk.CTkLabel(form_frame, text="Treatment Editor", font=("Arial", 22, "bold")).pack(pady=20)
 
-        # Patient ComboBox
-        ctk.CTkLabel(
-            form_frame,
-            text="Select Patient:",
-            font=("Arial", 14)
-        ).pack(pady=(10, 2), anchor="w", padx=50)
+        # Diagnosis Combo
+        ctk.CTkLabel(form_frame, text="Select Linked Diagnosis ID:", font=("Arial", 12, "bold")).pack(anchor="w", padx=50, pady=(5, 2))
+        self.diagnosis_combo = ctk.CTkComboBox(form_frame, width=320, values=[])
+        self.diagnosis_combo.pack(pady=3)
+        self.load_diagnoses()
 
+        # Patient Combo
+        ctk.CTkLabel(form_frame, text="Select Patient:", font=("Arial", 12, "bold")).pack(anchor="w", padx=50, pady=(5, 2))
         self.patient_combo = ctk.CTkComboBox(form_frame, width=320, values=[])
-        self.patient_combo.pack(pady=5)
-
-        # Health Worker ComboBox
-        ctk.CTkLabel(
-            form_frame,
-            text="Select Health Worker:",
-            font=("Arial", 14)
-        ).pack(pady=(10, 2), anchor="w", padx=50)
-
-        self.worker_combo = ctk.CTkComboBox(form_frame, width=320, values=[])
-        self.worker_combo.pack(pady=5)
-
-        # Treatment Name Entry
-        ctk.CTkLabel(
-            form_frame,
-            text="Treatment Name:",
-            font=("Arial", 14)
-        ).pack(pady=(10, 2), anchor="w", padx=50)
-
-        self.treatment_name_entry = ctk.CTkEntry(
-            form_frame,
-            width=320,
-            placeholder_text="e.g., Paracetamol"
-        )
-        self.treatment_name_entry.pack(pady=5)
-
-        # Dosage Entry
-        ctk.CTkLabel(
-            form_frame,
-            text="Dosage:",
-            font=("Arial", 14)
-        ).pack(pady=(10, 2), anchor="w", padx=50)
-
-        self.dosage_entry = ctk.CTkEntry(
-            form_frame,
-            width=320,
-            placeholder_text="e.g., 500mg Every 8 Hours"
-        )
-        self.dosage_entry.pack(pady=5)
-
-        # Duration Entry
-        ctk.CTkLabel(
-            form_frame,
-            text="Duration:",
-            font=("Arial", 14)
-        ).pack(pady=(10, 2), anchor="w", padx=50)
-
-        self.duration_entry = ctk.CTkEntry(
-            form_frame,
-            width=320,
-            placeholder_text="e.g., 5 Days"
-        )
-        self.duration_entry.pack(pady=5)
-
-        # ==============================
-        # Action Buttons
-        # ==============================
-
-        button_frame = ctk.CTkFrame(form_frame, fg_color="transparent")
-        button_frame.pack(pady=25)
-
-        ctk.CTkButton(
-            button_frame,
-            text="➕ Add Treatment",
-            width=140,
-            command=self.add_treatment
-        ).grid(row=0, column=0, padx=5, pady=5)
-
-        ctk.CTkButton(
-            button_frame,
-            text="✏ Update",
-            width=140,
-            command=self.update_treatment
-        ).grid(row=0, column=1, padx=5, pady=5)
-
-        ctk.CTkButton(
-            button_frame,
-            text="❌ Delete",
-            width=140,
-            command=self.delete_treatment
-        ).grid(row=1, column=0, padx=5, pady=5)
-
-        ctk.CTkButton(
-            button_frame,
-            text="🧹 Clear",
-            width=140,
-            command=self.clear_fields
-        ).grid(row=1, column=1, padx=5, pady=5)
-
-        # ==============================
-        # Right Panel (Treeview Table)
-        # ==============================
-
-        table_frame = ctk.CTkFrame(main_frame)
-        table_frame.pack(side="right", fill="both", expand=True, padx=15, pady=15)
-
-        # Search bar at top of right panel
-        search_frame = ctk.CTkFrame(table_frame)
-        search_frame.pack(fill="x", pady=10)
-
-        self.search_entry = ctk.CTkEntry(
-            search_frame,
-            width=300,
-            placeholder_text="Search Treatment..."
-        )
-        self.search_entry.pack(side="left", padx=10)
-
-        ctk.CTkButton(
-            search_frame,
-            text="Search",
-            command=self.search_treatment
-        ).pack(side="left", padx=5)
-
-        ctk.CTkButton(
-            search_frame,
-            text="Refresh",
-            command=self.refresh_table
-        ).pack(side="left", padx=5)
-
-        # Treeview columns
-        columns = (
-            "Treatment ID",
-            "Patient",
-            "Health Worker",
-            "Treatment Name",
-            "Dosage",
-            "Duration"
-        )
-
-        # Style Treeview table (dark theme consistent with other modules)
-        style = ttk.Style()
-        style.theme_use("clam")
-        style.configure(
-            "Treeview",
-            background="#2b2b2b",
-            foreground="white",
-            fieldbackground="#2b2b2b",
-            rowheight=35,
-            font=("Arial", 13)
-        )
-        style.map(
-            "Treeview",
-            background=[("selected", "#1F6AA5")],
-            foreground=[("selected", "white")]
-        )
-        style.configure(
-            "Treeview.Heading",
-            background="#1f1f1f",
-            foreground="white",
-            font=("Arial", 14, "bold"),
-            relief="flat"
-        )
-        style.map(
-            "Treeview.Heading",
-            background=[("active", "#2d2d2d")]
-        )
-
-        # Create Treeview widget
-        self.table = ttk.Treeview(
-            table_frame,
-            columns=columns,
-            show="headings",
-            height=20
-        )
-
-        for col in columns:
-            self.table.heading(col, text=col, anchor="center")
-            self.table.column(col, width=150, anchor="center")
-
-        # Vertical scrollbar
-        v_scrollbar = ttk.Scrollbar(
-            table_frame,
-            orient="vertical",
-            command=self.table.yview
-        )
-
-        # Horizontal scrollbar
-        h_scrollbar = ttk.Scrollbar(
-            table_frame,
-            orient="horizontal",
-            command=self.table.xview
-        )
-
-        self.table.configure(
-            yscrollcommand=v_scrollbar.set,
-            xscrollcommand=h_scrollbar.set
-        )
-
-        # Pack scrollbars and treeview
-        h_scrollbar.pack(side="bottom", fill="x")
-        self.table.pack(side="left", fill="both", expand=True)
-        v_scrollbar.pack(side="right", fill="y")
-
-        # Bind row selection to populate the form
-        self.table.bind("<<TreeviewSelect>>", self.select_treatment)
-
-        # Load initial data into ComboBoxes and Treeview
+        self.patient_combo.pack(pady=3)
         self.load_patients()
-        self.load_workers()
-        self.load_treatments()
 
-    # ==============================
-    # Helper Methods
-    # ==============================
+        # Doctor Combo
+        ctk.CTkLabel(form_frame, text="Select Doctor:", font=("Arial", 12, "bold")).pack(anchor="w", padx=50, pady=(5, 2))
+        self.doctor_combo = ctk.CTkComboBox(form_frame, width=320, values=[])
+        self.doctor_combo.pack(pady=3)
+        self.load_doctors()
+
+        # Treatment Details Textbox
+        ctk.CTkLabel(form_frame, text="Treatment Advice / Details:", font=("Arial", 12, "bold")).pack(anchor="w", padx=50, pady=(5, 2))
+        self.details_textbox = ctk.CTkTextbox(form_frame, width=320, height=100)
+        self.details_textbox.pack(pady=3)
+
+        # Dates (Start & End)
+        dates_frame = ctk.CTkFrame(form_frame, fg_color="transparent")
+        dates_frame.pack(fill="x", padx=50, pady=5)
+
+        ctk.CTkLabel(dates_frame, text="Start Date:", font=("Arial", 11, "bold")).grid(row=0, column=0, sticky="e", pady=5)
+        self.start_date_entry = ctk.CTkEntry(dates_frame, width=100)
+        self.start_date_entry.grid(row=0, column=1, sticky="w", padx=5, pady=5)
+
+        ctk.CTkLabel(dates_frame, text="End Date:", font=("Arial", 11, "bold")).grid(row=0, column=2, sticky="e", pady=5)
+        self.end_date_entry = ctk.CTkEntry(dates_frame, width=100)
+        self.end_date_entry.grid(row=0, column=3, sticky="w", padx=5, pady=5)
+
+        # Status Combo
+        ctk.CTkLabel(form_frame, text="Plan Status:", font=("Arial", 12, "bold")).pack(anchor="w", padx=50, pady=(5, 2))
+        self.status_combo = ctk.CTkComboBox(form_frame, width=320, values=["Active", "Completed", "Suspended"])
+        self.status_combo.pack(pady=3)
+        self.status_combo.set("Active")
+
+        # Action Buttons
+        btn_frame = ctk.CTkFrame(form_frame, fg_color="transparent")
+        btn_frame.pack(pady=15)
+
+        ctk.CTkButton(btn_frame, text="➕ Add Plan", command=self.add_treatment, width=145).grid(row=0, column=0, padx=5, pady=5)
+        ctk.CTkButton(btn_frame, text="✏ Update", command=self.update_treatment, width=145).grid(row=0, column=1, padx=5, pady=5)
+        ctk.CTkButton(btn_frame, text="❌ Delete", command=self.delete_treatment, fg_color="red", hover_color="#b71c1c", width=145).grid(row=1, column=0, padx=5, pady=5)
+        ctk.CTkButton(btn_frame, text="🧹 Clear", command=self.clear_fields, width=145).grid(row=1, column=1, padx=5, pady=5)
+
+        # Right Panel: Treeview Table
+        self.table_frame = ctk.CTkFrame(main_frame)
+        self.table_frame.pack(side="right", fill="both", expand=True, padx=15, pady=15)
+
+        # Search Bar
+        search_frame = ctk.CTkFrame(self.table_frame, fg_color="transparent")
+        search_frame.pack(fill="x", padx=15, pady=10)
+
+        self.search_entry = ctk.CTkEntry(search_frame, placeholder_text="Search by Patient Name or Details...", width=300)
+        self.search_entry.pack(side="left")
+        self.search_entry.bind("<KeyRelease>", self.search_treatment)
+
+        ctk.CTkButton(search_frame, text="Search", command=self.search_treatment, width=100).pack(side="left", padx=10)
+        ctk.CTkButton(search_frame, text="Reset", command=self.refresh_table, width=100).pack(side="left")
+
+        # Treeview Setup
+        container = ctk.CTkFrame(self.table_frame, fg_color="transparent")
+        container.pack(fill="both", expand=True, padx=15, pady=5)
+
+        scrollbar = ttk.Scrollbar(container)
+        scrollbar.pack(side="right", fill="y")
+
+        columns = ("ID", "Diag ID", "Patient Name", "Doctor Name", "Details", "Start Date", "End Date", "Status")
+        self.table = ttk.Treeview(container, columns=columns, show="headings", yscrollcommand=scrollbar.set, height=18)
+        for col in columns:
+            self.table.heading(col, text=col, anchor="w")
+            self.table.column(col, anchor="w", width=100)
+        self.table.column("ID", width=40, anchor="center")
+        self.table.column("Diag ID", width=60, anchor="center")
+        self.table.column("Details", width=250)
+
+        self.table.pack(side="left", fill="both", expand=True)
+        scrollbar.config(command=self.table.yview)
+
+        self.table.bind("<<TreeviewSelect>>", self.on_row_selected)
+
+        self.load_treatments()
+        self.clear_fields()
 
     def extract_id(self, combo_value):
-        """Extract the integer ID from a ComboBox display string like '1 - Alhaji Mawiya Sow'."""
         if not combo_value:
             return None
         try:
-            parts = combo_value.split(" - ")
-            return int(parts[0])
-        except Exception:
+            return int(combo_value.split("ID: ")[1].replace(")", ""))
+        except:
             return None
 
-    # ==============================
-    # Data Loading Methods
-    # ==============================
+    def load_diagnoses(self):
+        try:
+            conn = connect_db()
+            cursor = conn.cursor()
+            cursor.execute("SELECT DiagnosisID, DiagnosisDetails FROM Diagnosis ORDER BY DiagnosisID DESC")
+            diags = [f"Diag #{row[0]} - {row[1][:25]} (ID: {row[0]})" for row in cursor.fetchall()]
+            self.diagnosis_combo.configure(values=diags)
+            if diags:
+                self.diagnosis_combo.set(diags[0])
+            conn.close()
+        except Exception as e:
+            print(f"Error loading diagnoses: {e}")
 
     def load_patients(self):
-        """Load all patients from the Patients table into the Patient ComboBox."""
         try:
             conn = connect_db()
             cursor = conn.cursor()
-            query = "SELECT PatientID, FullName FROM Patients ORDER BY PatientID"
-            cursor.execute(query)
-            rows = cursor.fetchall()
-
-            patient_list = []
-            for row in rows:
-                patient_list.append(f"{row[0]} - {row[1]}")
-
-            self.patient_combo.configure(values=patient_list)
-            if patient_list:
-                self.patient_combo.set(patient_list[0])
+            cursor.execute("SELECT PatientID, FullName FROM Patients ORDER BY PatientID DESC")
+            pats = [f"{name} (ID: {pid})" for pid, name in cursor.fetchall()]
+            self.patient_combo.configure(values=pats)
+            if pats:
+                self.patient_combo.set(pats[0])
             conn.close()
         except Exception as e:
-            messagebox.showerror("Database Error", f"Failed to load patients:\n{e}")
+            print(f"Error loading patients: {e}")
 
-    def load_workers(self):
-        """Load all health workers from the Health_Workers table into the Worker ComboBox."""
+    def load_doctors(self):
         try:
             conn = connect_db()
             cursor = conn.cursor()
-            query = "SELECT WorkerID, FullName FROM Health_Workers ORDER BY WorkerID"
-            cursor.execute(query)
-            rows = cursor.fetchall()
-
-            worker_list = []
-            for row in rows:
-                worker_list.append(f"{row[0]} - {row[1]}")
-
-            self.worker_combo.configure(values=worker_list)
-            
-            # If opened from Doctor Dashboard, pre-select the logged-in doctor and disable the dropdown
-            if hasattr(self.master, 'doctor_worker_id'):
-                doctor_str = None
-                for worker in worker_list:
-                    if worker.startswith(f"{self.master.doctor_worker_id} -"):
-                        doctor_str = worker
-                        break
-                if doctor_str:
-                    self.worker_combo.set(doctor_str)
-                    self.worker_combo.configure(state="disabled")
-            elif worker_list:
-                self.worker_combo.set(worker_list[0])
-                
+            cursor.execute("SELECT WorkerID, FullName FROM Health_Workers WHERE Role = 'Doctor'")
+            docs = [f"Dr. {name} (ID: {wid})" for wid, name in cursor.fetchall()]
+            self.doctor_combo.configure(values=docs)
+            if docs:
+                self.doctor_combo.set(docs[0])
             conn.close()
         except Exception as e:
-            messagebox.showerror("Database Error", f"Failed to load health workers:\n{e}")
+            print(f"Error loading doctors: {e}")
 
     def load_treatments(self):
-        """Fetch all treatment records from the database and populate the Treeview."""
-        # Clear existing items in the treeview
         for item in self.table.get_children():
             self.table.delete(item)
-
         try:
             conn = connect_db()
             cursor = conn.cursor()
-            
-            if hasattr(self.master, 'doctor_worker_id'):
-                query = """
-                    SELECT 
-                        t.TreatmentID,
-                        COALESCE(CONCAT(p.PatientID, ' - ', p.FullName), 'Unknown Patient'),
-                        COALESCE(CONCAT(w.WorkerID, ' - ', w.FullName), 'Unknown Worker'),
-                        t.TreatmentName,
-                        t.Dosage,
-                        t.Duration
-                    FROM Treatment t
-                    LEFT JOIN Patients p ON t.PatientID = p.PatientID
-                    LEFT JOIN Health_Workers w ON t.WorkerID = w.WorkerID
-                    WHERE t.WorkerID = %s
-                    ORDER BY t.TreatmentID DESC
-                """
-                cursor.execute(query, (self.master.doctor_worker_id,))
-            else:
-                query = """
-                    SELECT 
-                        t.TreatmentID,
-                        COALESCE(CONCAT(p.PatientID, ' - ', p.FullName), 'Unknown Patient'),
-                        COALESCE(CONCAT(w.WorkerID, ' - ', w.FullName), 'Unknown Worker'),
-                        t.TreatmentName,
-                        t.Dosage,
-                        t.Duration
-                    FROM Treatment t
-                    LEFT JOIN Patients p ON t.PatientID = p.PatientID
-                    LEFT JOIN Health_Workers w ON t.WorkerID = w.WorkerID
-                    ORDER BY t.TreatmentID DESC
-                """
-                cursor.execute(query)
-                
-            rows = cursor.fetchall()
-
-            for row in rows:
-                cleaned_row = ["" if val is None else str(val) for val in row]
-                self.table.insert("", "end", values=cleaned_row)
-
+            cursor.execute("""
+                SELECT t.TreatmentID, t.DiagnosisID, p.FullName, hw.FullName, t.TreatmentDetails, t.StartDate, t.EndDate, t.Status
+                FROM Treatment t
+                LEFT JOIN Patients p ON t.PatientID = p.PatientID
+                LEFT JOIN Health_Workers hw ON t.DoctorID = hw.WorkerID
+                ORDER BY t.TreatmentID DESC
+            """)
+            for row in cursor.fetchall():
+                cleaned = ["" if val is None else str(val) for val in row]
+                self.table.insert("", "end", values=cleaned)
             conn.close()
         except Exception as e:
-            messagebox.showerror("Database Error", f"Failed to load treatments:\n{e}")
+            print(f"Error loading treatments: {e}")
 
-    # ==============================
-    # CRUD Operations
-    # ==============================
+    def on_row_selected(self, event):
+        selected = self.table.selection()
+        if not selected:
+            return
+        row = self.table.item(selected[0], "values")
+        self.selected_treatment_id = int(row[0])
+
+        # Match diagnosis combo
+        diag_id = row[1]
+        diag_vals = self.diagnosis_combo.cget("values")
+        for dv in diag_vals:
+            if f"ID: {diag_id}" in dv:
+                self.diagnosis_combo.set(dv)
+                break
+
+        # Match patient combo
+        pat_vals = self.patient_combo.cget("values")
+        for p in pat_vals:
+            if row[2] in p:
+                self.patient_combo.set(p)
+                break
+
+        # Match doctor combo
+        doc_vals = self.doctor_combo.cget("values")
+        for d in doc_vals:
+            if row[3] in d:
+                self.doctor_combo.set(d)
+                break
+
+        self.details_textbox.delete("1.0", "end")
+        self.details_textbox.insert("1.0", row[4])
+
+        self.start_date_entry.delete(0, "end")
+        self.start_date_entry.insert(0, row[5])
+
+        self.end_date_entry.delete(0, "end")
+        self.end_date_entry.insert(0, row[6])
+
+        self.status_combo.set(row[7])
+
+    def clear_fields(self):
+        self.selected_treatment_id = None
+        self.details_textbox.delete("1.0", "end")
+        self.start_date_entry.delete(0, "end")
+        self.start_date_entry.insert(0, datetime.now().strftime("%Y-%m-%d"))
+        self.end_date_entry.delete(0, "end")
+        self.end_date_entry.insert(0, (datetime.now() + timedelta(days=7)).strftime("%Y-%m-%d"))
+        self.status_combo.set("Active")
+        self.table.selection_remove(self.table.selection())
 
     def add_treatment(self):
-        """Validate all fields and save a new treatment record to MySQL."""
-        patient_val = self.patient_combo.get()
-        worker_val = self.worker_combo.get()
-        treatment_name = self.treatment_name_entry.get().strip()
-        dosage = self.dosage_entry.get().strip()
-        duration = self.duration_entry.get().strip()
+        diag_id = self.extract_id(self.diagnosis_combo.get())
+        patient_id = self.extract_id(self.patient_combo.get())
+        doctor_id = self.extract_id(self.doctor_combo.get())
+        details = self.details_textbox.get("1.0", "end").strip()
+        start = self.start_date_entry.get().strip()
+        end = self.end_date_entry.get().strip()
+        status = self.status_combo.get()
 
-        # Extract IDs from ComboBox display strings
-        patient_id = self.extract_id(patient_val)
-        worker_id = self.extract_id(worker_val)
+        if not diag_id or not patient_id or not doctor_id or not details or not start or not end:
+            messagebox.showerror("Error", "All fields are required.")
+            return
 
-        # Validate all required fields are filled
-        if not patient_id:
-            messagebox.showerror("Validation Error", "Please select a valid patient.")
-            return
-        if not worker_id:
-            messagebox.showerror("Validation Error", "Please select a valid health worker.")
-            return
-        if not treatment_name:
-            messagebox.showerror("Validation Error", "Please enter the treatment name.")
-            return
-        if not dosage:
-            messagebox.showerror("Validation Error", "Please enter the dosage.")
-            return
-        if not duration:
-            messagebox.showerror("Validation Error", "Please enter the duration.")
+        try:
+            datetime.strptime(start, "%Y-%m-%d")
+            datetime.strptime(end, "%Y-%m-%d")
+        except ValueError:
+            messagebox.showerror("Error", "Use YYYY-MM-DD date format.")
             return
 
         try:
             conn = connect_db()
             cursor = conn.cursor()
-            query = """
-                INSERT INTO Treatment (PatientID, WorkerID, TreatmentName, Dosage, Duration)
-                VALUES (%s, %s, %s, %s, %s)
-            """
-            cursor.execute(query, (patient_id, worker_id, treatment_name, dosage, duration))
+            cursor.execute("""
+                INSERT INTO Treatment (DiagnosisID, PatientID, DoctorID, TreatmentDetails, StartDate, EndDate, Status)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
+            """, (diag_id, patient_id, doctor_id, details, start, end, status))
+            treat_id = cursor.lastrowid
             conn.commit()
             conn.close()
 
-            messagebox.showinfo("Success", "Treatment added successfully!")
+            # Write audit log
+            from database import log_audit_action
+            log_audit_action(self.user_id, f"Recorded treatment plan (TreatmentID: {treat_id}) for PatientID: {patient_id}")
+
+            messagebox.showinfo("Success", "Treatment plan added successfully!")
             self.load_treatments()
             self.clear_fields()
         except Exception as e:
             messagebox.showerror("Database Error", f"Failed to add treatment:\n{e}")
 
     def update_treatment(self):
-        """Update the selected treatment record in the database."""
         if not self.selected_treatment_id:
-            messagebox.showwarning(
-                "Selection Warning",
-                "Please select a treatment from the table to update."
-            )
+            messagebox.showwarning("Warning", "Select a treatment record to update.")
             return
 
-        patient_val = self.patient_combo.get()
-        worker_val = self.worker_combo.get()
-        treatment_name = self.treatment_name_entry.get().strip()
-        dosage = self.dosage_entry.get().strip()
-        duration = self.duration_entry.get().strip()
+        diag_id = self.extract_id(self.diagnosis_combo.get())
+        patient_id = self.extract_id(self.patient_combo.get())
+        doctor_id = self.extract_id(self.doctor_combo.get())
+        details = self.details_textbox.get("1.0", "end").strip()
+        start = self.start_date_entry.get().strip()
+        end = self.end_date_entry.get().strip()
+        status = self.status_combo.get()
 
-        patient_id = self.extract_id(patient_val)
-        worker_id = self.extract_id(worker_val)
+        if not diag_id or not patient_id or not doctor_id or not details or not start or not end:
+            messagebox.showerror("Error", "All fields are required.")
+            return
 
-        # Validate all required fields
-        if not patient_id:
-            messagebox.showerror("Validation Error", "Please select a valid patient.")
-            return
-        if not worker_id:
-            messagebox.showerror("Validation Error", "Please select a valid health worker.")
-            return
-        if not treatment_name:
-            messagebox.showerror("Validation Error", "Please enter the treatment name.")
-            return
-        if not dosage:
-            messagebox.showerror("Validation Error", "Please enter the dosage.")
-            return
-        if not duration:
-            messagebox.showerror("Validation Error", "Please enter the duration.")
+        try:
+            datetime.strptime(start, "%Y-%m-%d")
+            datetime.strptime(end, "%Y-%m-%d")
+        except ValueError:
+            messagebox.showerror("Error", "Use YYYY-MM-DD date format.")
             return
 
         try:
             conn = connect_db()
             cursor = conn.cursor()
-            query = """
+            cursor.execute("""
                 UPDATE Treatment
-                SET PatientID = %s, WorkerID = %s, TreatmentName = %s, Dosage = %s, Duration = %s
+                SET DiagnosisID = %s, PatientID = %s, DoctorID = %s, TreatmentDetails = %s, StartDate = %s, EndDate = %s, Status = %s
                 WHERE TreatmentID = %s
-            """
-            cursor.execute(query, (
-                patient_id, worker_id, treatment_name, dosage, duration,
-                self.selected_treatment_id
-            ))
+            """, (diag_id, patient_id, doctor_id, details, start, end, status, self.selected_treatment_id))
             conn.commit()
             conn.close()
 
-            messagebox.showinfo("Success", "Treatment updated successfully!")
+            messagebox.showinfo("Success", "Treatment plan updated successfully!")
             self.load_treatments()
             self.clear_fields()
         except Exception as e:
             messagebox.showerror("Database Error", f"Failed to update treatment:\n{e}")
 
     def delete_treatment(self):
-        """Delete the selected treatment record after user confirmation."""
         if not self.selected_treatment_id:
-            messagebox.showwarning(
-                "Selection Warning",
-                "Please select a treatment from the table to delete."
-            )
+            messagebox.showwarning("Warning", "Select a treatment record to delete.")
             return
 
-        confirm = messagebox.askyesno(
-            "Confirm Delete",
-            "Are you sure you want to delete this treatment record?"
-        )
+        confirm = messagebox.askyesno("Confirm Delete", "Are you sure you want to delete this treatment record?")
         if not confirm:
             return
 
         try:
             conn = connect_db()
             cursor = conn.cursor()
-            query = "DELETE FROM Treatment WHERE TreatmentID = %s"
-            cursor.execute(query, (self.selected_treatment_id,))
+            cursor.execute("DELETE FROM Treatment WHERE TreatmentID = %s", (self.selected_treatment_id,))
             conn.commit()
             conn.close()
 
-            messagebox.showinfo("Success", "Treatment deleted successfully!")
+            messagebox.showinfo("Success", "Treatment plan deleted successfully!")
             self.load_treatments()
             self.clear_fields()
         except Exception as e:
             messagebox.showerror("Database Error", f"Failed to delete treatment:\n{e}")
 
-    # ==============================
-    # Search, Select, Clear, Refresh
-    # ==============================
-
-    def search_treatment(self):
-        """Search treatments by Patient Name, Health Worker Name, or Treatment Name.
-        Displays only matching records in the Treeview."""
-        search_query = self.search_entry.get().strip()
-        if not search_query:
+    def search_treatment(self, event=None):
+        q = self.search_entry.get().strip()
+        if not q:
             self.load_treatments()
             return
-
-        # Clear existing items in treeview
         for item in self.table.get_children():
             self.table.delete(item)
-
         try:
             conn = connect_db()
             cursor = conn.cursor()
-            
-            if hasattr(self.master, 'doctor_worker_id'):
-                query = """
-                    SELECT 
-                        t.TreatmentID,
-                        COALESCE(CONCAT(p.PatientID, ' - ', p.FullName), 'Unknown Patient'),
-                        COALESCE(CONCAT(w.WorkerID, ' - ', w.FullName), 'Unknown Worker'),
-                        t.TreatmentName,
-                        t.Dosage,
-                        t.Duration
-                    FROM Treatment t
-                    LEFT JOIN Patients p ON t.PatientID = p.PatientID
-                    LEFT JOIN Health_Workers w ON t.WorkerID = w.WorkerID
-                    WHERE t.WorkerID = %s AND (p.FullName LIKE %s
-                       OR w.FullName LIKE %s
-                       OR t.TreatmentName LIKE %s)
-                    ORDER BY t.TreatmentID DESC
-                """
-                like_val = f"%{search_query}%"
-                cursor.execute(query, (self.master.doctor_worker_id, like_val, like_val, like_val))
-            else:
-                query = """
-                    SELECT 
-                        t.TreatmentID,
-                        COALESCE(CONCAT(p.PatientID, ' - ', p.FullName), 'Unknown Patient'),
-                        COALESCE(CONCAT(w.WorkerID, ' - ', w.FullName), 'Unknown Worker'),
-                        t.TreatmentName,
-                        t.Dosage,
-                        t.Duration
-                    FROM Treatment t
-                    LEFT JOIN Patients p ON t.PatientID = p.PatientID
-                    LEFT JOIN Health_Workers w ON t.WorkerID = w.WorkerID
-                    WHERE p.FullName LIKE %s
-                       OR w.FullName LIKE %s
-                       OR t.TreatmentName LIKE %s
-                    ORDER BY t.TreatmentID DESC
-                """
-                like_val = f"%{search_query}%"
-                cursor.execute(query, (like_val, like_val, like_val))
-                
-            rows = cursor.fetchall()
-
-            for row in rows:
-                cleaned_row = ["" if val is None else str(val) for val in row]
-                self.table.insert("", "end", values=cleaned_row)
-
+            cursor.execute("""
+                SELECT t.TreatmentID, t.DiagnosisID, p.FullName, hw.FullName, t.TreatmentDetails, t.StartDate, t.EndDate, t.Status
+                FROM Treatment t
+                LEFT JOIN Patients p ON t.PatientID = p.PatientID
+                LEFT JOIN Health_Workers hw ON t.DoctorID = hw.WorkerID
+                WHERE p.FullName LIKE %s OR t.TreatmentDetails LIKE %s
+                ORDER BY t.TreatmentID DESC
+            """, (f"%{q}%", f"%{q}%"))
+            for row in cursor.fetchall():
+                cleaned = ["" if val is None else str(val) for val in row]
+                self.table.insert("", "end", values=cleaned)
             conn.close()
         except Exception as e:
-            messagebox.showerror("Database Error", f"Failed to search treatments:\n{e}")
-
-    def select_treatment(self, event=None):
-        """When a row in the Treeview is clicked, load all its data into the form fields."""
-        selected_item = self.table.selection()
-        if not selected_item:
-            return
-
-        row_values = self.table.item(selected_item[0], "values")
-        if not row_values:
-            return
-
-        # Store the selected treatment ID
-        self.selected_treatment_id = row_values[0]
-
-        # Set the Patient ComboBox to match the selected row
-        patient_info = row_values[1]
-        patient_values = self.patient_combo.cget("values")
-        if patient_info in patient_values:
-            self.patient_combo.set(patient_info)
-        else:
-            for val in patient_values:
-                if val.startswith(patient_info.split(" - ")[0] + " "):
-                    self.patient_combo.set(val)
-                    break
-
-        # Set the Health Worker ComboBox to match the selected row
-        worker_info = row_values[2]
-        worker_values = self.worker_combo.cget("values")
-        if worker_info in worker_values:
-            self.worker_combo.set(worker_info)
-        else:
-            for val in worker_values:
-                if val.startswith(worker_info.split(" - ")[0] + " "):
-                    self.worker_combo.set(val)
-                    break
-
-        # Set the Treatment Name
-        self.treatment_name_entry.delete(0, "end")
-        self.treatment_name_entry.insert(0, row_values[3])
-
-        # Set the Dosage
-        self.dosage_entry.delete(0, "end")
-        self.dosage_entry.insert(0, row_values[4])
-
-        # Set the Duration
-        self.duration_entry.delete(0, "end")
-        self.duration_entry.insert(0, row_values[5])
-
-    def clear_fields(self):
-        """Clear all form fields and reset the ComboBoxes and Treeview selection."""
-        self.selected_treatment_id = None
-
-        # Clear the Treatment Name field
-        self.treatment_name_entry.delete(0, "end")
-
-        # Clear the Dosage field
-        self.dosage_entry.delete(0, "end")
-
-        # Clear the Duration field
-        self.duration_entry.delete(0, "end")
-
-        # Clear the search entry
-        self.search_entry.delete(0, "end")
-
-        # Remove Treeview selection highlight
-        self.table.selection_remove(self.table.selection())
-
-        # Reset the Patient ComboBox to the first value
-        patient_values = self.patient_combo.cget("values")
-        if patient_values:
-            self.patient_combo.set(patient_values[0])
-
-        # Reset the Health Worker ComboBox to the first value
-        worker_values = self.worker_combo.cget("values")
-        if worker_values:
-            self.worker_combo.set(worker_values[0])
+            print(f"Error searching treatments: {e}")
 
     def refresh_table(self):
-        """Reload all treatment records from the database into the Treeview.
-        Also resets the Patient and Health Worker ComboBoxes."""
-        self.load_patients()
-        self.load_workers()
+        self.search_entry.delete(0, "end")
         self.load_treatments()
+        self.clear_fields()
 
 
 if __name__ == "__main__":
     class TestApp(ctk.CTk):
         def __init__(self):
             super().__init__()
-            self.geometry("1500x850")
+            self.geometry("1400x800")
             TreatmentWindow(self)
 
     app = TestApp()

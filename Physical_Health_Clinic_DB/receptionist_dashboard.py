@@ -475,12 +475,12 @@ class ReceptionistDashboard(ctk.CTk):
             self.waiting_card.value_label.configure(text=str(cursor.fetchone()[0]))
 
             # 4. Payments received today
-            cursor.execute("SELECT SUM(Amount) FROM Payments WHERE DATE(PaymentDate) = CURDATE()")
+            cursor.execute("SELECT SUM(Amount) FROM Payment WHERE DATE(PaymentDate) = CURDATE()")
             total_pay = cursor.fetchone()[0] or 0
             self.payments_card.value_label.configure(text=f"Le {total_pay:,.2f}")
 
             # 5. Receipts generated today
-            cursor.execute("SELECT COUNT(*) FROM Receipts WHERE DATE(IssueDate) = CURDATE()")
+            cursor.execute("SELECT COUNT(*) FROM Receipt WHERE DATE(IssueDate) = CURDATE()")
             self.receipts_card.value_label.configure(text=str(cursor.fetchone()[0]))
 
             conn.close()
@@ -565,7 +565,7 @@ class ReceptionistDashboard(ctk.CTk):
             cursor = conn.cursor()
             query = """
                 SELECT py.PaymentID, pt.FullName, py.Amount, py.PaymentMethod, DATE(py.PaymentDate)
-                FROM Payments py
+                FROM Payment py
                 LEFT JOIN Patients pt ON py.PatientID = pt.PatientID
                 ORDER BY py.PaymentID DESC
                 LIMIT 5

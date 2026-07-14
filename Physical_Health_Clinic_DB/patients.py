@@ -89,9 +89,15 @@ class PatientWindow(ctk.CTkToplevel):
 
         self.phone = ctk.CTkEntry(form_frame, width=320, placeholder_text="Phone Number")
         self.phone.pack(pady=10)
-
         self.address = ctk.CTkEntry(form_frame, width=320, placeholder_text="Address")
         self.address.pack(pady=10)
+
+        # Assign Doctor ComboBox
+        ctk.CTkLabel(form_frame, text="Assign Doctor:", font=("Arial", 12, "bold")).pack(anchor="w", padx=50, pady=(5, 0))
+        self.doctor_combo = ctk.CTkComboBox(form_frame, width=320, values=[])
+        self.doctor_combo.pack(pady=10)
+
+        self.load_doctors()
 
         # =========================
         # Buttons
@@ -134,13 +140,6 @@ class PatientWindow(ctk.CTkToplevel):
         # Style Treeview table (dark theme, but not too dark)
         style = ttk.Style()
         style.theme_use("clam")
-        # style.configure("Treeview",
-        #     background="#2b2b2b",
-        #     foreground="white",
-        #     fieldbackground="#2b2b2b",
-        #     rowheight=35,
-        #     font=("Arial", 13)
-        # )
         style.map("Treeview",
             background=[("selected", "#1F6AA5")],
             foreground=[("selected", "white")]
@@ -184,39 +183,43 @@ class PatientWindow(ctk.CTkToplevel):
         # Load patient records from database automatically on startup
         self.load_data()
 
-    def load_data(self):
-        """Fetch all patient records from the database and populate the treeview."""
-        print("[DEBUG] load_data() triggered.")
-        # Clear existing items in treeview
-        for item in self.table.get_children():
-            self.table.delete(item)
-
+    def load_doctors(self):
         try:
             conn = connect_db()
             cursor = conn.cursor()
+            cursor.execute("SELECT WorkerID, FullName FROM Health_Workers WHERE Role = 'Doctor'")
+            docs = cursor.fetchall()
+            conn.close()
             
-            if hasattr(self.master, "doctor_worker_id"):
-                query = """
-                    SELECT DISTINCT p.PatientID, p.FullName, p.DateOfBirth, p.Gender, p.PhoneNumber, p.Address
-                    FROM Patients p
-                    INNER JOIN Appointments a ON p.PatientID = a.PatientID
-                    WHERE a.WorkerID = %s
-                """
-                cursor.execute(query, (self.master.doctor_worker_id,))
-            else:
-                query = "SELECT PatientID, FullName, DateOfBirth, Gender, PhoneNumber, Address FROM Patients"
-                cursor.execute(query)
+            doc_list = [f"Dr. {name} (ID: {wid})" for wid, name in docs]
+            self.doctor_combo.configure(values=doc_list)
+            if doc_list:
+                self.doctor_combo.set(doc_list[0])
+        except Exception as e:
+            print(f"Error loading doctors: {e}")
 
+    def load_data(self):
+        """Load all patient records from MySQL and render inside Treeview."""
+        print("[DEBUG] load_data() triggered...")
+        for item in self.table.get_children():
+            self.table.delete(item)
+ 
+        try:
+            conn = connect_db()
+            cursor = conn.cursor()
+            cursor.execute("SELECT PatientID, FullName, DateOfBirth, Gender, PhoneNumber, Address FROM Patients ORDER BY PatientID DESC")
             rows = cursor.fetchall()
-            print(f"[DEBUG] Query executed. Found {len(rows)} records.")
-
+ 
+            print(f"[DEBUG] DB returned {len(rows)} patient rows.")
             for row in rows:
                 cleaned_row = ["" if val is None else str(val) for val in row]
                 self.table.insert("", "end", values=cleaned_row)
-
-            # Update the total patients label
-            self.total_patients_lbl.configure(text=f"👥 Total Patients: {len(rows)}")
-
+ 
+            # Update total patients badge if parent has it
+            cursor.execute("SELECT COUNT(*) FROM Patients")
+            total = cursor.fetchone()[0]
+            self.total_patients_lbl.configure(text=f"👥 Total Patients: {total}")
+ 
             conn.close()
             print("[DEBUG] load_data() completed successfully and connection closed.")
         except Exception as e:
@@ -224,38 +227,76 @@ class PatientWindow(ctk.CTkToplevel):
             messagebox.showerror("Database Error", f"Failed to load patients:\n{e}")
 
     def add_patient(self):
-        """Add a new patient record to the database."""
+        """Add a new patient record, create appointment, and insert pending consultation payment."""
         name = self.fullname.get().strip()
         dob = self.dob.get().strip()
         gender = self.gender.get()
         phone = self.phone.get().strip()
         address = self.address.get().strip()
-
-        print(f"[DEBUG] add_patient() triggered. Form input - Name: '{name}', DOB: '{dob}', Gender: '{gender}', Phone: '{phone}', Address: '{address}'")
-
+        doc_val = self.doctor_combo.get()
+ 
         if not name or not dob or not gender:
-            print("[DEBUG] Validation failed: name, dob, or gender is empty.")
             messagebox.showerror("Validation Error", "Full Name, Date of Birth, and Gender are required fields.")
             return
-
+            
+        if not doc_val:
+            messagebox.showerror("Validation Error", "Please assign a doctor to the patient.")
+            return
+ 
         try:
+            # Extract doctor ID
+            doctor_id = int(doc_val.split("ID: ")[1].replace(")", ""))
+            
+            # Fetch current receptionist worker ID if available in session
+            import session
+            receptionist_worker_id = 2
+            if hasattr(session, "current_user") and session.current_user:
+                receptionist_worker_id = session.current_user.get("worker_id", 2)
+ 
             conn = connect_db()
             cursor = conn.cursor()
+            
+            # 1. Insert patient
             query = """
                 INSERT INTO Patients (FullName, DateOfBirth, Gender, PhoneNumber, Address)
                 VALUES (%s, %s, %s, %s, %s)
             """
             cursor.execute(query, (name, dob, gender, phone, address))
+            patient_id = cursor.lastrowid
+            
+            # 2. Get consultation price from Hospital_Services
+            cursor.execute("SELECT Price FROM Hospital_Services WHERE ServiceName = 'Consultation'")
+            svc_row = cursor.fetchone()
+            consult_price = float(svc_row[0]) if svc_row else 200.00
+            
+            # 3. Insert pending Payment record
+            cursor.execute("""
+                INSERT INTO Payment (PatientID, Amount, PaymentType, ServiceID, LabRequestID, DispensingID, PaymentMethod, PaymentDate, BilledBy)
+                VALUES (%s, %s, 'Consultation', NULL, NULL, NULL, 'Pending', CURRENT_TIMESTAMP, %s)
+            """, (patient_id, consult_price, receptionist_worker_id))
+            
+            # 4. Insert Appointments record
+            cursor.execute("""
+                INSERT INTO Appointments (PatientID, WorkerID, AppointmentDate, AppointmentTime, Status)
+                VALUES (%s, %s, CURDATE(), CURRENT_TIME(), 'Pending')
+            """, (patient_id, doctor_id))
+ 
             conn.commit()
-            print(f"[DEBUG] INSERT executed. Last row ID: {cursor.lastrowid}")
             conn.close()
-
-            messagebox.showinfo("Success", "Patient added successfully!")
+ 
+            # Write audit logs
+            user_id = 1
+            if hasattr(session, "current_user") and session.current_user:
+                user_id = session.current_user.get("user_id", 1)
+            from database import log_audit_action
+            log_audit_action(user_id, f"Registered patient '{name}' (PatientID: {patient_id})")
+            log_audit_action(user_id, f"Created appointment for PatientID: {patient_id} assigned to Doctor ID: {doctor_id}")
+ 
+            messagebox.showinfo("Success", f"Patient registered successfully!\nAssigned to {doc_val.split(' (ID:')[0]}.")
             self.load_data()
             self.clear_field()
         except Exception as e:
-            print(f"[ERROR] add_patient() failed: {e}")
-            messagebox.showerror("Database Error", f"Failed to add patient:\n{e}")
+            messagebox.showerror("Database Error", f"Failed to register patient:\n{e}")
 
     def update_patient(self):
         """Update the selected patient record in the database."""

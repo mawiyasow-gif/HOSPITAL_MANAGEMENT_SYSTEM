@@ -1,6 +1,6 @@
 import customtkinter as ctk
 from tkinter import ttk, messagebox
-from datetime import datetime
+from datetime import datetime, timedelta
 from database import connect_db
 import os
 
@@ -376,12 +376,12 @@ class DoctorDashboard(ctk.CTk):
             self.today_appointments_card.value_label.configure(text=str(today_app))
 
             # 3. Diagnoses Completed
-            cursor.execute("SELECT COUNT(*) FROM Diagnosis WHERE WorkerID = %s", (self.doctor_worker_id,))
+            cursor.execute("SELECT COUNT(*) FROM Diagnosis WHERE DoctorID = %s", (self.doctor_worker_id,))
             diag_count = cursor.fetchone()[0]
             self.diagnoses_card.value_label.configure(text=str(diag_count))
 
             # 4. Treatments Prescribed
-            cursor.execute("SELECT COUNT(*) FROM Treatment WHERE WorkerID = %s", (self.doctor_worker_id,))
+            cursor.execute("SELECT COUNT(*) FROM Treatment WHERE DoctorID = %s", (self.doctor_worker_id,))
             treat_count = cursor.fetchone()[0]
             self.treatments_card.value_label.configure(text=str(treat_count))
 
@@ -412,7 +412,15 @@ class DoctorDashboard(ctk.CTk):
                 SELECT a.AppointmentID, pat.FullName, a.AppointmentTime, a.Status
                 FROM Appointments a
                 LEFT JOIN Patients pat ON a.PatientID = pat.PatientID
-                WHERE a.WorkerID = %s AND a.AppointmentDate = CURDATE() AND a.Status = 'Pending'
+                WHERE a.WorkerID = %s 
+                  AND a.AppointmentDate = CURDATE() 
+                  AND a.Status = 'Pending'
+                  AND EXISTS (
+                      SELECT 1 FROM Payment p
+                      WHERE p.PatientID = a.PatientID
+                        AND p.PaymentType = 'Consultation'
+                        AND p.PaymentMethod <> 'Pending'
+                  )
                 ORDER BY a.AppointmentTime ASC
             """
             cursor.execute(query, (self.doctor_worker_id,))
@@ -458,10 +466,10 @@ class DoctorDashboard(ctk.CTk):
             conn = connect_db()
             cursor = conn.cursor()
             query = """
-                SELECT d.DiagnosisID, pat.FullName, d.Description, d.DiagnosisDate
+                SELECT d.DiagnosisID, pat.FullName, d.DiagnosisDetails, d.DiagnosisDate
                 FROM Diagnosis d
                 LEFT JOIN Patients pat ON d.PatientID = pat.PatientID
-                WHERE d.WorkerID = %s
+                WHERE d.DoctorID = %s
                 ORDER BY d.DiagnosisID DESC LIMIT 10
             """
             cursor.execute(query, (self.doctor_worker_id,))
@@ -566,7 +574,7 @@ class DoctorDashboard(ctk.CTk):
             self.attend_btn.configure(state="disabled", fg_color="gray")
 
     def attend_patient(self):
-        """Mark the selected pending appointment as Completed and open DiagnosisWindow."""
+        """Open the ConsultationWindow for the selected appointment."""
         selected = self.today_app_table.table.selection()
         if not selected:
             messagebox.showwarning("Selection Warning", "Please select a patient appointment from the queue.")
@@ -579,28 +587,21 @@ class DoctorDashboard(ctk.CTk):
         appointment_id = row[0]
         patient_name = row[1]
 
-        confirm = messagebox.askyesno(
-            "Attend Patient",
-            f"Would you like to attend to {patient_name} and mark their consultation as completed?"
-        )
-        if confirm:
-            try:
-                conn = connect_db()
-                cursor = conn.cursor()
-                cursor.execute(
-                    "UPDATE Appointments SET Status = 'Completed' WHERE AppointmentID = %s",
-                    (appointment_id,)
-                )
-                conn.commit()
-                conn.close()
+        try:
+            conn = connect_db()
+            cursor = conn.cursor()
+            cursor.execute("SELECT PatientID FROM Appointments WHERE AppointmentID = %s", (appointment_id,))
+            row_pat = cursor.fetchone()
+            conn.close()
+            if not row_pat:
+                messagebox.showerror("Error", "Patient ID not found for this appointment.")
+                return
+            patient_id = row_pat[0]
 
-                messagebox.showinfo("Success", f"{patient_name}'s consultation is marked as completed.")
-                self.refresh_dashboard()
-
-                # Automatically open DiagnosisWindow to record details
-                self.open_diagnosis()
-            except Exception as e:
-                messagebox.showerror("Database Error", f"Failed to update appointment status:\n{e}")
+            # Open ConsultationWindow
+            ConsultationWindow(self, appointment_id, patient_id, patient_name, self.doctor_worker_id)
+        except Exception as e:
+            messagebox.showerror("Database Error", f"Failed to retrieve patient details:\n{e}")
 
     def refresh_dashboard(self):
         """Reload all data lists."""
@@ -925,3 +926,500 @@ class ProfileWindow(ctk.CTkToplevel):
 if __name__ == "__main__":
     app = DoctorDashboard()
     app.mainloop()
+
+
+class ConsultationWindow(ctk.CTkToplevel):
+    """Clinical Consultation Workspace for Doctor."""
+
+    def __init__(self, parent, appointment_id, patient_id, patient_name, doctor_worker_id):
+        super().__init__(parent)
+        self.parent = parent
+        self.appointment_id = appointment_id
+        self.patient_id = patient_id
+        self.patient_name = patient_name
+        self.doctor_worker_id = doctor_worker_id
+
+        self.title(f"Consultation Workspace - Patient: {patient_name} (ID: {patient_id})")
+        self.geometry("1400x850")
+        self.resizable(True, True)
+        self.transient(parent)
+        self.grab_set()
+
+        self.prescriptions = []
+
+        # UI Layout
+        # Top Panel
+        top_panel = ctk.CTkFrame(self, height=60)
+        top_panel.pack(fill="x", padx=15, pady=10)
+        top_panel.pack_propagate(False)
+        
+        title_lbl = ctk.CTkLabel(top_panel, text=f"🩺 Patient Consultation: {patient_name} (ID: {patient_id})", font=("Arial", 18, "bold"), text_color="#1F6AA5")
+        title_lbl.pack(side="left", padx=20, pady=15)
+        
+        close_btn = ctk.CTkButton(top_panel, text="Close Workspace", fg_color="red", hover_color="#b71c1c", width=120, command=self.destroy)
+        close_btn.pack(side="right", padx=20, pady=15)
+
+        # Tabview
+        self.tabview = ctk.CTkTabview(self)
+        self.tabview.pack(fill="both", expand=True, padx=15, pady=10)
+        
+        self.tab_history = self.tabview.add("Patient Details & History")
+        self.tab_lab = self.tabview.add("Laboratory Requests & Results")
+        self.tab_diagnosis = self.tabview.add("Diagnosis & Treatment Plan")
+
+        self.setup_history_tab()
+        self.setup_lab_tab()
+        self.setup_diagnosis_tab()
+
+    def setup_history_tab(self):
+        # Layout for history tab
+        # 1. Demographics Panel
+        demo_frame = ctk.CTkFrame(self.tab_history)
+        demo_frame.pack(fill="x", padx=10, pady=10)
+        
+        ctk.CTkLabel(demo_frame, text="📋 Patient Demographics", font=("Arial", 14, "bold"), text_color="#1F6AA5").grid(row=0, column=0, columnspan=4, sticky="w", padx=15, pady=5)
+        
+        # Query patient info
+        dob = gender = phone = address = blood = ""
+        try:
+            conn = connect_db()
+            cursor = conn.cursor()
+            cursor.execute("SELECT DateOfBirth, Gender, PhoneNumber, Address, BloodGroup FROM Patients WHERE PatientID = %s", (self.patient_id,))
+            row = cursor.fetchone()
+            conn.close()
+            if row:
+                dob, gender, phone, address, blood = row
+                dob = str(dob)
+                blood = blood if blood else "Unknown"
+        except Exception as e:
+            print(f"Error fetching demographics: {e}")
+
+        ctk.CTkLabel(demo_frame, text="Date of Birth:", font=("Arial", 12, "bold")).grid(row=1, column=0, sticky="e", padx=10, pady=5)
+        ctk.CTkLabel(demo_frame, text=dob, font=("Arial", 12)).grid(row=1, column=1, sticky="w", padx=10, pady=5)
+        
+        ctk.CTkLabel(demo_frame, text="Gender:", font=("Arial", 12, "bold")).grid(row=1, column=2, sticky="e", padx=10, pady=5)
+        ctk.CTkLabel(demo_frame, text=gender, font=("Arial", 12)).grid(row=1, column=3, sticky="w", padx=10, pady=5)
+        
+        ctk.CTkLabel(demo_frame, text="Phone Number:", font=("Arial", 12, "bold")).grid(row=2, column=0, sticky="e", padx=10, pady=5)
+        ctk.CTkLabel(demo_frame, text=phone, font=("Arial", 12)).grid(row=2, column=1, sticky="w", padx=10, pady=5)
+        
+        ctk.CTkLabel(demo_frame, text="Blood Group:", font=("Arial", 12, "bold")).grid(row=2, column=2, sticky="e", padx=10, pady=5)
+        ctk.CTkLabel(demo_frame, text=blood, font=("Arial", 12)).grid(row=2, column=3, sticky="w", padx=10, pady=5)
+
+        ctk.CTkLabel(demo_frame, text="Home Address:", font=("Arial", 12, "bold")).grid(row=3, column=0, sticky="e", padx=10, pady=5)
+        ctk.CTkLabel(demo_frame, text=address, font=("Arial", 12)).grid(row=3, column=1, columnspan=3, sticky="w", padx=10, pady=5)
+
+        # 2. History tables frame (split layout)
+        tables_frame = ctk.CTkFrame(self.tab_history, fg_color="transparent")
+        tables_frame.pack(fill="both", expand=True, padx=10, pady=10)
+
+        # Diagnoses Tree
+        diag_frame = ctk.CTkFrame(tables_frame)
+        diag_frame.pack(side="left", fill="both", expand=True, padx=(0, 5))
+        ctk.CTkLabel(diag_frame, text="🩺 Previous Diagnoses", font=("Arial", 14, "bold"), text_color="#1F6AA5").pack(pady=5)
+        
+        self.diag_tree = self.create_tree(diag_frame, ("Date", "Details", "Doctor"))
+        self.diag_tree.pack(fill="both", expand=True, padx=10, pady=10)
+
+        # Treatments Tree
+        treat_frame = ctk.CTkFrame(tables_frame)
+        treat_frame.pack(side="right", fill="both", expand=True, padx=(5, 0))
+        ctk.CTkLabel(treat_frame, text="💊 Previous Treatments & Prescriptions", font=("Arial", 14, "bold"), text_color="#1F6AA5").pack(pady=5)
+        
+        self.treat_tree = self.create_tree(treat_frame, ("Start Date", "End Date", "Treatment Details", "Doctor"))
+        self.treat_tree.pack(fill="both", expand=True, padx=10, pady=10)
+
+        self.load_history_data()
+
+    def create_tree(self, parent, columns):
+        container = ctk.CTkFrame(parent, fg_color="transparent")
+        container.pack(fill="both", expand=True)
+        
+        scrollbar = ttk.Scrollbar(container)
+        scrollbar.pack(side="right", fill="y")
+        
+        tree = ttk.Treeview(container, columns=columns, show="headings", yscrollcommand=scrollbar.set)
+        for col in columns:
+            tree.heading(col, text=col, anchor="w")
+            tree.column(col, anchor="w", width=120)
+        tree.pack(side="left", fill="both", expand=True)
+        scrollbar.config(command=tree.yview)
+        return tree
+
+    def load_history_data(self):
+        # Load previous diagnoses
+        try:
+            conn = connect_db()
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT d.DiagnosisDate, d.DiagnosisDetails, hw.FullName
+                FROM Diagnosis d
+                LEFT JOIN Health_Workers hw ON d.DoctorID = hw.WorkerID
+                WHERE d.PatientID = %s ORDER BY d.DiagnosisID DESC
+            """, (self.patient_id,))
+            for row in cursor.fetchall():
+                cleaned = ["" if val is None else str(val) for val in row]
+                self.diag_tree.insert("", "end", values=cleaned)
+
+            # Load previous treatments
+            cursor.execute("""
+                SELECT t.StartDate, t.EndDate, t.TreatmentDetails, hw.FullName
+                FROM Treatment t
+                LEFT JOIN Health_Workers hw ON t.DoctorID = hw.WorkerID
+                WHERE t.PatientID = %s ORDER BY t.TreatmentID DESC
+            """, (self.patient_id,))
+            for row in cursor.fetchall():
+                cleaned = ["" if val is None else str(val) for val in row]
+                self.treat_tree.insert("", "end", values=cleaned)
+                
+            conn.close()
+        except Exception as e:
+            print(f"Error loading history data: {e}")
+
+    def setup_lab_tab(self):
+        main_lab_frame = ctk.CTkFrame(self.tab_lab, fg_color="transparent")
+        main_lab_frame.pack(fill="both", expand=True, padx=10, pady=10)
+
+        # Left Panel: Lab Requests Tree
+        left_panel = ctk.CTkFrame(main_lab_frame)
+        left_panel.pack(side="left", fill="both", expand=True, padx=(0, 5))
+        
+        ctk.CTkLabel(left_panel, text="📋 Lab Request Log", font=("Arial", 14, "bold"), text_color="#1F6AA5").pack(pady=5)
+        
+        self.lab_tree = self.create_tree(left_panel, ("Req ID", "Date", "Test Name", "Result Details", "Technician", "Status"))
+        self.lab_tree.pack(fill="both", expand=True, padx=10, pady=10)
+
+        # Right Panel: Create New Request
+        right_panel = ctk.CTkFrame(main_lab_frame, width=350)
+        right_panel.pack(side="right", fill="both", padx=(5, 0))
+        right_panel.pack_propagate(False)
+
+        ctk.CTkLabel(right_panel, text="➕ Create Laboratory Request", font=("Arial", 14, "bold"), text_color="#1F6AA5").pack(pady=10)
+        
+        # Test selection scrollable list
+        ctk.CTkLabel(right_panel, text="Select Tests Required:", font=("Arial", 12, "bold")).pack(anchor="w", padx=20, pady=(10, 2))
+        
+        self.tests_frame = ctk.CTkScrollableFrame(right_panel, height=250)
+        self.tests_frame.pack(fill="x", padx=20, pady=5)
+        
+        # Query active tests from Laboratory_Tests
+        self.test_checkboxes = {}
+        try:
+            conn = connect_db()
+            cursor = conn.cursor()
+            cursor.execute("SELECT TestID, TestName, Price FROM Laboratory_Tests")
+            tests = cursor.fetchall()
+            conn.close()
+            
+            for test_id, name, price in tests:
+                var = ctk.BooleanVar()
+                cb = ctk.CTkCheckBox(self.tests_frame, text=f"{name} (Le {price:,.2f})", variable=var)
+                cb.pack(anchor="w", padx=10, pady=4)
+                self.test_checkboxes[test_id] = (var, name)
+        except Exception as e:
+            print(f"Error loading lab tests list: {e}")
+
+        # Send Request Button
+        self.req_btn = ctk.CTkButton(right_panel, text="🚀 Send Lab Request", font=("Arial", 13, "bold"), height=38, command=self.send_lab_request)
+        self.req_btn.pack(pady=20, padx=20, fill="x")
+
+        # Current Lab Status Label
+        self.lab_status_lbl = ctk.CTkLabel(right_panel, text="Status: Ready for Consultation", font=("Arial", 12, "bold"), text_color="green")
+        self.lab_status_lbl.pack(pady=10)
+
+        self.load_lab_requests()
+        self.check_pending_lab_status()
+
+    def load_lab_requests(self):
+        for item in self.lab_tree.get_children():
+            self.lab_tree.delete(item)
+        try:
+            conn = connect_db()
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT lr.RequestID, lr.RequestDate, lt.TestName, res.ResultDetails, tech.FullName, lr.Status
+                FROM Laboratory_Requests lr
+                LEFT JOIN Laboratory_Results res ON lr.RequestID = res.RequestID
+                LEFT JOIN Laboratory_Tests lt ON res.TestID = lt.TestID
+                LEFT JOIN Health_Workers tech ON res.TechnicianID = tech.WorkerID
+                WHERE lr.PatientID = %s
+                ORDER BY lr.RequestID DESC
+            """, (self.patient_id,))
+            for row in cursor.fetchall():
+                cleaned = ["" if val is None else str(val) for val in row]
+                self.lab_tree.insert("", "end", values=cleaned)
+            conn.close()
+        except Exception as e:
+            print(f"Error loading lab requests: {e}")
+
+    def check_pending_lab_status(self):
+        try:
+            conn = connect_db()
+            cursor = conn.cursor()
+            cursor.execute("SELECT COUNT(*) FROM Laboratory_Requests WHERE PatientID = %s AND Status = 'Pending'", (self.patient_id,))
+            pending_count = cursor.fetchone()[0]
+            conn.close()
+            
+            if pending_count > 0:
+                self.lab_status_lbl.configure(text="⚠️ Waiting for Laboratory Results (Pending)", text_color="#FF9800")
+                if hasattr(self, "finalize_btn"):
+                    self.finalize_btn.configure(state="disabled", fg_color="gray")
+                    self.finalize_btn.configure(text="🔒 Lab Tests Pending - Finalize Disabled")
+            else:
+                self.lab_status_lbl.configure(text="✅ Ready for Final Diagnosis (No Pending Tests)", text_color="green")
+                if hasattr(self, "finalize_btn"):
+                    self.finalize_btn.configure(state="normal", fg_color="#4CAF50")
+                    self.finalize_btn.configure(text="💾 Finalize Consultation & Print Prescription")
+        except Exception as e:
+            print(f"Error checking pending lab status: {e}")
+
+    def send_lab_request(self):
+        selected_tests = [test_id for test_id, (var, name) in self.test_checkboxes.items() if var.get()]
+        if not selected_tests:
+            messagebox.showwarning("Selection Warning", "Please select at least one laboratory test.")
+            return
+
+        confirm = messagebox.askyesno("Confirm Request", "Send selected tests to the Laboratory?")
+        if not confirm:
+            return
+
+        try:
+            conn = connect_db()
+            cursor = conn.cursor()
+            
+            cursor.execute("""
+                INSERT INTO Laboratory_Requests (PatientID, DoctorID, AppointmentID, Status)
+                VALUES (%s, %s, %s, 'Pending')
+            """, (self.patient_id, self.doctor_worker_id, self.appointment_id))
+            request_id = cursor.lastrowid
+            
+            for test_id in selected_tests:
+                cursor.execute("""
+                    INSERT INTO Laboratory_Results (RequestID, TestID, ResultDetails, TestDate, TechnicianID)
+                    VALUES (%s, %s, NULL, NULL, NULL)
+                """, (request_id, test_id))
+
+            conn.commit()
+            conn.close()
+            
+            # Write audit log
+            import session
+            user_id = session.current_user.get("user_id", 1) if (session and session.current_user) else 1
+            from database import log_audit_action
+            log_audit_action(user_id, f"Doctor requested laboratory tests (RequestID: {request_id}) for PatientID: {self.patient_id}")
+            
+            for test_id, (var, name) in self.test_checkboxes.items():
+                var.set(False)
+
+            messagebox.showinfo("Success", "Laboratory request sent successfully!")
+            self.load_lab_requests()
+            self.check_pending_lab_status()
+        except Exception as e:
+            messagebox.showerror("Database Error", f"Failed to submit laboratory request:\n{e}")
+
+    def setup_diagnosis_tab(self):
+        main_diag_frame = ctk.CTkFrame(self.tab_diagnosis, fg_color="transparent")
+        main_diag_frame.pack(fill="both", expand=True, padx=10, pady=10)
+
+        left_panel = ctk.CTkFrame(main_diag_frame)
+        left_panel.pack(side="left", fill="both", expand=True, padx=(0, 5))
+
+        ctk.CTkLabel(left_panel, text="Diagnosis Details:", font=("Arial", 13, "bold")).pack(anchor="w", padx=20, pady=(10, 2))
+        self.diag_entry = ctk.CTkTextbox(left_panel, height=100)
+        self.diag_entry.pack(fill="x", padx=20, pady=5)
+
+        ctk.CTkLabel(left_panel, text="Treatment Advice / Details:", font=("Arial", 13, "bold")).pack(anchor="w", padx=20, pady=(10, 2))
+        self.treat_advice_entry = ctk.CTkTextbox(left_panel, height=100)
+        self.treat_advice_entry.pack(fill="x", padx=20, pady=5)
+
+        dates_frame = ctk.CTkFrame(left_panel, fg_color="transparent")
+        dates_frame.pack(fill="x", padx=20, pady=10)
+        
+        ctk.CTkLabel(dates_frame, text="Start Date:", font=("Arial", 12, "bold")).grid(row=0, column=0, sticky="e", padx=5)
+        self.start_date_entry = ctk.CTkEntry(dates_frame, width=150)
+        self.start_date_entry.insert(0, datetime.now().strftime("%Y-%m-%d"))
+        self.start_date_entry.grid(row=0, column=1, sticky="w", padx=5)
+
+        ctk.CTkLabel(dates_frame, text="End Date:", font=("Arial", 12, "bold")).grid(row=0, column=2, sticky="e", padx=5)
+        self.end_date_entry = ctk.CTkEntry(dates_frame, width=150)
+        self.end_date_entry.insert(0, (datetime.now() + timedelta(days=7)).strftime("%Y-%m-%d"))
+        self.end_date_entry.grid(row=0, column=3, sticky="w", padx=5)
+
+        right_panel = ctk.CTkFrame(main_diag_frame, width=450)
+        right_panel.pack(side="right", fill="both", padx=(5, 0))
+        right_panel.pack_propagate(False)
+
+        ctk.CTkLabel(right_panel, text="💊 Prescribe Medications", font=("Arial", 14, "bold"), text_color="#1F6AA5").pack(pady=5)
+        
+        ctk.CTkLabel(right_panel, text="Select Drug from Stock:", font=("Arial", 12, "bold")).pack(anchor="w", padx=20, pady=2)
+        self.med_combo = ctk.CTkComboBox(right_panel, width=400, values=[])
+        self.med_combo.pack(padx=20, pady=5)
+        
+        self.load_inventory_meds()
+
+        ctk.CTkLabel(right_panel, text="Dosage Instructions:", font=("Arial", 12, "bold")).pack(anchor="w", padx=20, pady=2)
+        self.dosage_entry = ctk.CTkEntry(right_panel, width=400, placeholder_text="e.g. 1 tab twice daily")
+        self.dosage_entry.insert(0, "1 tablet daily")
+        self.dosage_entry.pack(padx=20, pady=5)
+
+        ctk.CTkLabel(right_panel, text="Quantity to Issue:", font=("Arial", 12, "bold")).pack(anchor="w", padx=20, pady=2)
+        self.qty_entry = ctk.CTkEntry(right_panel, width=400, placeholder_text="e.g. 10")
+        self.qty_entry.insert(0, "10")
+        self.qty_entry.pack(padx=20, pady=5)
+
+        presc_btn_frame = ctk.CTkFrame(right_panel, fg_color="transparent")
+        presc_btn_frame.pack(fill="x", padx=20, pady=10)
+        
+        ctk.CTkButton(presc_btn_frame, text="➕ Add Drug", command=self.add_prescription_item, width=190).pack(side="left", padx=5)
+        ctk.CTkButton(presc_btn_frame, text="❌ Remove Drug", fg_color="red", hover_color="#b71c1c", command=self.remove_prescription_item, width=190).pack(side="right", padx=5)
+
+        self.presc_tree = self.create_tree(right_panel, ("Medicine Name", "Dosage", "Qty"))
+        self.presc_tree.pack(fill="both", expand=True, padx=20, pady=10)
+
+        self.finalize_btn = ctk.CTkButton(left_panel, text="💾 Finalize Consultation & Print Prescription", font=("Arial", 14, "bold"), height=45, fg_color="#4CAF50", hover_color="#43A047", command=self.finalize_consultation)
+        self.finalize_btn.pack(pady=20, padx=20, fill="x")
+
+        self.check_pending_lab_status()
+
+    def load_inventory_meds(self):
+        try:
+            conn = connect_db()
+            cursor = conn.cursor()
+            cursor.execute("SELECT MedicineName, Quantity, SellingPrice FROM Inventory WHERE Quantity > 0")
+            rows = cursor.fetchall()
+            conn.close()
+            
+            med_list = [f"{name} (Stock: {qty} | Le {sell:,.2f})" for name, qty, sell in rows]
+            self.med_combo.configure(values=med_list)
+            if med_list:
+                self.med_combo.set(med_list[0])
+        except Exception as e:
+            print(f"Error loading inventory meds: {e}")
+
+    def add_prescription_item(self):
+        med_val = self.med_combo.get()
+        dosage = self.dosage_entry.get().strip()
+        qty_str = self.qty_entry.get().strip()
+
+        if not med_val:
+            messagebox.showerror("Error", "No medicine selected.")
+            return
+        if not dosage:
+            messagebox.showerror("Error", "Please fill in the dosage instruction.")
+            return
+        if not qty_str:
+            messagebox.showerror("Error", "Please fill in the quantity.")
+            return
+
+        try:
+            qty = int(qty_str)
+            if qty <= 0:
+                raise ValueError()
+        except ValueError:
+            messagebox.showerror("Error", "Quantity must be a positive integer.")
+            return
+
+        medicine_name = med_val.split(" (Stock:")[0].strip()
+
+        self.prescriptions.append({
+            "medicine_name": medicine_name,
+            "dosage": dosage,
+            "quantity": qty
+        })
+        
+        self.presc_tree.insert("", "end", values=(medicine_name, dosage, qty))
+        self.dosage_entry.delete(0, "end")
+        self.dosage_entry.insert(0, "1 tablet daily")
+        self.qty_entry.delete(0, "end")
+        self.qty_entry.insert(0, "10")
+
+    def remove_prescription_item(self):
+        selected = self.presc_tree.selection()
+        if not selected:
+            messagebox.showwarning("Selection Warning", "Please select a drug item to remove.")
+            return
+            
+        row = self.presc_tree.item(selected[0], "values")
+        med_name = row[0]
+        
+        self.prescriptions = [item for item in self.prescriptions if item["medicine_name"] != med_name]
+        self.presc_tree.delete(selected[0])
+
+    def finalize_consultation(self):
+        diag_details = self.diag_entry.get("1.0", "end").strip()
+        treat_details = self.treat_advice_entry.get("1.0", "end").strip()
+        start_date = self.start_date_entry.get().strip()
+        end_date = self.end_date_entry.get().strip()
+
+        if not diag_details:
+            messagebox.showerror("Validation Error", "Please provide diagnosis details.")
+            return
+        if not treat_details:
+            messagebox.showerror("Validation Error", "Please provide treatment advice.")
+            return
+        if not start_date or not end_date:
+            messagebox.showerror("Validation Error", "Start and End dates are required.")
+            return
+
+        try:
+            datetime.strptime(start_date, "%Y-%m-%d")
+            datetime.strptime(end_date, "%Y-%m-%d")
+        except ValueError:
+            messagebox.showerror("Validation Error", "Invalid date format. Please use YYYY-MM-DD.")
+            return
+
+        confirm = messagebox.askyesno("Finalize", "Are you sure you want to finalize this consultation?")
+        if not confirm:
+            return
+
+        try:
+            conn = connect_db()
+            cursor = conn.cursor()
+
+            cursor.execute("""
+                SELECT RequestID FROM Laboratory_Requests 
+                WHERE PatientID = %s AND AppointmentID = %s AND Status = 'Completed'
+                ORDER BY RequestID DESC LIMIT 1
+            """, (self.patient_id, self.appointment_id))
+            lab_req_row = cursor.fetchone()
+            lab_request_id = lab_req_row[0] if lab_req_row else None
+
+            cursor.execute("""
+                INSERT INTO Diagnosis (AppointmentID, PatientID, DoctorID, DiagnosisDetails, DiagnosisDate, LabRequestID)
+                VALUES (%s, %s, %s, %s, CURRENT_TIMESTAMP, %s)
+            """, (self.appointment_id, self.patient_id, self.doctor_worker_id, diag_details, lab_request_id))
+            diagnosis_id = cursor.lastrowid
+
+            cursor.execute("""
+                INSERT INTO Treatment (DiagnosisID, PatientID, DoctorID, TreatmentDetails, StartDate, EndDate, Status)
+                VALUES (%s, %s, %s, %s, %s, %s, 'Active')
+            """, (diagnosis_id, self.patient_id, self.doctor_worker_id, treat_details, start_date, end_date))
+            treatment_id = cursor.lastrowid
+
+            for item in self.prescriptions:
+                cursor.execute("""
+                    INSERT INTO Prescription (TreatmentID, PatientID, DoctorID, MedicineName, Dosage, QuantityPrescribed, Status)
+                    VALUES (%s, %s, %s, %s, %s, %s, 'Pending')
+                """, (treatment_id, self.patient_id, self.doctor_worker_id, item["medicine_name"], item["dosage"], item["quantity"]))
+
+            cursor.execute("""
+                UPDATE Appointments SET Status = 'Completed' WHERE AppointmentID = %s
+            """, (self.appointment_id,))
+
+            conn.commit()
+            conn.close()
+ 
+            # Write audit logs for Diagnosis, Treatment and Prescriptions
+            import session
+            user_id = session.current_user.get("user_id", 1) if (session and session.current_user) else 1
+            from database import log_audit_action
+            log_audit_action(user_id, f"Recorded diagnosis (DiagnosisID: {diagnosis_id}) for PatientID: {self.patient_id}")
+            log_audit_action(user_id, f"Recorded treatment (TreatmentID: {treatment_id}) for PatientID: {self.patient_id}")
+            if self.prescriptions:
+                log_audit_action(user_id, f"Created prescription for TreatmentID: {treatment_id} (Medicines: {[m['medicine_name'] for m in self.prescriptions]})")
+ 
+            messagebox.showinfo("Success", "Patient consultation finalized successfully!")
+            self.parent.refresh_dashboard()
+            self.destroy()
+        except Exception as e:
+            messagebox.showerror("Database Error", f"Failed to save consultation details:\n{e}")

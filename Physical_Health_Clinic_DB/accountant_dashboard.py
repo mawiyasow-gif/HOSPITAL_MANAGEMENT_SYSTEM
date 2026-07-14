@@ -271,19 +271,19 @@ class AccountantDashboard(ctk.CTk):
             cursor = conn.cursor()
 
             # Stats
-            cursor.execute("SELECT SUM(Amount) FROM Payments WHERE DATE(PaymentDate) = CURDATE()")
+            cursor.execute("SELECT SUM(Amount) FROM Payment WHERE DATE(PaymentDate) = CURDATE()")
             today_rev = cursor.fetchone()[0] or 0
             self.today_revenue_card.value_label.configure(text=f"Le {today_rev:,.2f}")
 
-            cursor.execute("SELECT SUM(Amount) FROM Payments WHERE YEARWEEK(PaymentDate, 1) = YEARWEEK(CURDATE(), 1)")
+            cursor.execute("SELECT SUM(Amount) FROM Payment WHERE YEARWEEK(PaymentDate, 1) = YEARWEEK(CURDATE(), 1)")
             week_rev = cursor.fetchone()[0] or 0
             self.week_revenue_card.value_label.configure(text=f"Le {week_rev:,.2f}")
 
-            cursor.execute("SELECT SUM(Amount) FROM Payments WHERE MONTH(PaymentDate) = MONTH(CURDATE()) AND YEAR(PaymentDate) = YEAR(CURDATE())")
+            cursor.execute("SELECT SUM(Amount) FROM Payment WHERE MONTH(PaymentDate) = MONTH(CURDATE()) AND YEAR(PaymentDate) = YEAR(CURDATE())")
             month_rev = cursor.fetchone()[0] or 0
             self.month_revenue_card.value_label.configure(text=f"Le {month_rev:,.2f}")
 
-            cursor.execute("SELECT SUM(Amount) FROM Payments")
+            cursor.execute("SELECT SUM(Amount) FROM Payment")
             total_rev = cursor.fetchone()[0] or 0
             self.total_revenue_card.value_label.configure(text=f"Le {total_rev:,.2f}")
 
@@ -293,20 +293,21 @@ class AccountantDashboard(ctk.CTk):
                 p_table.delete(item)
             cursor.execute("""
                 SELECT p.PaymentID, pat.FullName, p.Amount, p.PaymentMethod, DATE(p.PaymentDate)
-                FROM Payments p
+                FROM Payment p
                 LEFT JOIN Patients pat ON p.PatientID = pat.PatientID
                 ORDER BY p.PaymentID DESC LIMIT 8
             """)
             for row in cursor.fetchall():
                 p_table.insert("", "end", values=(row[0], row[1], f"Le {row[2]:,.2f}", row[3], str(row[4])))
-
+ 
             # Receipts Table
             r_table = self.receipts_table_frame.table
             for item in r_table.get_children():
                 r_table.delete(item)
             cursor.execute("""
-                SELECT r.ReceiptID, r.ReceiptNumber, r.TotalAmount, DATE(r.IssueDate)
-                FROM Receipts r
+                SELECT r.ReceiptID, r.ReceiptID, p.Amount, DATE(r.IssueDate)
+                FROM Receipt r
+                JOIN Payment p ON r.PaymentID = p.PaymentID
                 ORDER BY r.ReceiptID DESC LIMIT 8
             """)
             for row in cursor.fetchall():
@@ -385,27 +386,27 @@ class FinancialSummaryWindow(ctk.CTkToplevel):
             cursor = conn.cursor()
 
             # Today's Cash
-            cursor.execute("SELECT SUM(Amount) FROM Payments WHERE DATE(PaymentDate) = CURDATE() AND LOWER(PaymentMethod) LIKE '%cash%'")
+            cursor.execute("SELECT SUM(Amount) FROM Payment WHERE DATE(PaymentDate) = CURDATE() AND LOWER(PaymentMethod) LIKE '%cash%'")
             cash = cursor.fetchone()[0] or 0
             self.labels[0].configure(text=f"Le {cash:,.2f}")
 
             # Today's Card/Mobile
-            cursor.execute("SELECT SUM(Amount) FROM Payments WHERE DATE(PaymentDate) = CURDATE() AND (LOWER(PaymentMethod) LIKE '%card%' OR LOWER(PaymentMethod) LIKE '%mobile%' OR LOWER(PaymentMethod) LIKE '%orange%' OR LOWER(PaymentMethod) LIKE '%tele%')")
+            cursor.execute("SELECT SUM(Amount) FROM Payment WHERE DATE(PaymentDate) = CURDATE() AND (LOWER(PaymentMethod) LIKE '%card%' OR LOWER(PaymentMethod) LIKE '%mobile%' OR LOWER(PaymentMethod) LIKE '%orange%' OR LOWER(PaymentMethod) LIKE '%tele%')")
             card = cursor.fetchone()[0] or 0
             self.labels[1].configure(text=f"Le {card:,.2f}")
 
             # Total Tx
-            cursor.execute("SELECT COUNT(*) FROM Payments")
+            cursor.execute("SELECT COUNT(*) FROM Payment")
             tx_count = cursor.fetchone()[0] or 0
             self.labels[2].configure(text=str(tx_count))
 
             # This month revenue
-            cursor.execute("SELECT SUM(Amount) FROM Payments WHERE MONTH(PaymentDate) = MONTH(CURDATE()) AND YEAR(PaymentDate) = YEAR(CURDATE())")
+            cursor.execute("SELECT SUM(Amount) FROM Payment WHERE MONTH(PaymentDate) = MONTH(CURDATE()) AND YEAR(PaymentDate) = YEAR(CURDATE())")
             month = cursor.fetchone()[0] or 0
             self.labels[3].configure(text=f"Le {month:,.2f}")
 
             # Cumulative
-            cursor.execute("SELECT SUM(Amount) FROM Payments")
+            cursor.execute("SELECT SUM(Amount) FROM Payment")
             total = cursor.fetchone()[0] or 0
             self.labels[4].configure(text=f"Le {total:,.2f}")
 

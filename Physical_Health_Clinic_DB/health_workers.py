@@ -1,6 +1,7 @@
 import customtkinter as ctk
 from tkinter import ttk, messagebox, filedialog
 from database import connect_db
+import hashlib
 import os
 import shutil
 
@@ -72,7 +73,7 @@ class HealthWorkerWindow(ctk.CTkToplevel):
         self.address = ctk.CTkEntry(form_frame, width=320, placeholder_text="Address")
         self.address.pack(pady=10)
 
-        self.role = ctk.CTkEntry(form_frame, width=320, placeholder_text="Role (e.g., Doctor, Nurse)")
+        self.role = ctk.CTkEntry(form_frame, width=320, placeholder_text="Role (e.g., Doctor, Laboratory Technician)")
         self.role.pack(pady=10)
 
         # Profile Photo Selection
@@ -214,9 +215,12 @@ class HealthWorkerWindow(ctk.CTkToplevel):
             cursor = conn.cursor()
 
             # Normalize role for the Users table enum
-            norm_role = role.capitalize()
-            if norm_role not in ['Administrator', 'Doctor', 'Receptionist', 'Nurse', 'Pharmacist', 'Accountant']:
-                norm_role = 'Nurse'
+            norm_role = role.strip().title()
+            if norm_role == "Lab Technician" or norm_role == "Laboratory Technician":
+                norm_role = "Laboratory Technician"
+            valid_roles = ['Administrator', 'Doctor', 'Receptionist', 'Laboratory Technician', 'Pharmacist', 'Accountant']
+            if norm_role not in valid_roles:
+                norm_role = 'Laboratory Technician'
 
             # Generate a unique username
             base_username = "".join([c for c in name.lower() if c.isalnum()])
@@ -232,11 +236,12 @@ class HealthWorkerWindow(ctk.CTkToplevel):
                 suffix += 1
 
             # Insert into Users first
+            hashed_pass = hashlib.sha256('Password123'.encode('utf-8')).hexdigest()
             user_query = """
                 INSERT INTO Users (FullName, username, Password, Role, Email, Phone, Gender, Status)
                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
             """
-            cursor.execute(user_query, (name, username, 'Password123', norm_role, None, phone, gender, 'Active'))
+            cursor.execute(user_query, (name, username, hashed_pass, norm_role, None, phone, gender, 'Active'))
             users_id = cursor.lastrowid
 
             # Insert into Health_Workers linked to the UsersID
@@ -289,9 +294,12 @@ class HealthWorkerWindow(ctk.CTkToplevel):
             cursor.execute("SELECT UsersID FROM Health_Workers WHERE WorkerID = %s", (self.selected_worker_id,))
             linked_user_row = cursor.fetchone()
 
-            norm_role = role.capitalize()
-            if norm_role not in ['Administrator', 'Doctor', 'Receptionist', 'Nurse', 'Pharmacist', 'Accountant']:
-                norm_role = 'Nurse'
+            norm_role = role.strip().title()
+            if norm_role == "Lab Technician" or norm_role == "Laboratory Technician":
+                norm_role = "Laboratory Technician"
+            valid_roles = ['Administrator', 'Doctor', 'Receptionist', 'Laboratory Technician', 'Pharmacist', 'Accountant']
+            if norm_role not in valid_roles:
+                norm_role = 'Laboratory Technician'
 
             if linked_user_row and linked_user_row[0]:
                 users_id = linked_user_row[0]
@@ -314,10 +322,11 @@ class HealthWorkerWindow(ctk.CTkToplevel):
                     username = f"{base_username}{suffix}"
                     suffix += 1
 
+                hashed_pass = hashlib.sha256('Password123'.encode('utf-8')).hexdigest()
                 cursor.execute("""
                     INSERT INTO Users (FullName, username, Password, Role, Email, Phone, Gender, Status)
                     VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-                """, (name, username, 'Password123', norm_role, None, phone, gender, 'Active'))
+                """, (name, username, hashed_pass, norm_role, None, phone, gender, 'Active'))
                 new_users_id = cursor.lastrowid
                 
                 cursor.execute("UPDATE Health_Workers SET UsersID = %s WHERE WorkerID = %s", (new_users_id, self.selected_worker_id))
