@@ -1,105 +1,132 @@
-# 🏥 Physical Health Clinic Record System (EHR)
+# Physical Health Clinic Record & Hospital Management System
 
-A complete, modern, and professional Electronic Health Record (EHR) & Clinic Management System built using **Python**, **CustomTkinter** (for a sleek, premium, light/dark-mode GUI), and a **MySQL** database backend. 
-
-This system is designed to streamline clinic workflows, secure patient and medical data under role-based access control, and provide health workers with intuitive tools for patient care, scheduling, billing, and inventory tracking.
+A modern, secure, role-based desktop hospital management system built with Python, CustomTkinter, and MySQL. This system automates the clinical care lifecycle and coordinates operations across multiple hospital roles.
 
 ---
 
-## 🌟 Key Features
+## 🏗 System Architecture & Workflow
 
-### 🔐 1. Role-Based Access Control (RBAC)
-*   **Multi-Role Authentication:** Access levels configured for **Administrators**, **Doctors**, **Nurses**, **Pharmacists**, **Receptionists**, and **Accountants**.
-*   **Automatic Dashboard Routing:** The system identifies roles during login and securely redirects users to their designated views.
-*   **Staff Profiles with Custom Avatars:** Doctors and health workers can view their clinic profiles alongside profile pictures uploaded by the Admin.
+The application enforces a structured medical and financial workflow:
 
-### 💼 2. Admin Command Center
-*   **Clinic Statistics Overview:** Dynamic count counters for assigned patients, registered users, and active cases.
-*   **Financial Tracking:** Real-time billing and revenue summaries displayed as daily, weekly, monthly, and overall stats.
-*   **User Management:** Register new staff accounts, modify details, configure access levels, reset passwords, or suspend accounts.
-*   **Alert Notifications:** System alerts highlighting critically low inventory stocks or expired pharmaceutical products.
-*   **Maintenance & Backup Tools:** Integrated backup system exporting SQL structure and data statements to local `.sql` files, clinic settings adjustments, and theme toggle controls.
-
-### 🩺 3. Doctor Workspace
-*   **Unattended Patients Queue:** Instantly isolates today's pending appointments, allowing clinicians to select a patient, attend to them, and automatically log diagnoses.
-*   **Consolidated Medical History:** View a patient's historical diagnoses, descriptions, drug prescriptions, and past medical records in a single interface.
-*   **Consultation Logging:** Generate and export clinical performance summaries (Daily, Weekly, Monthly consultations).
-
-### 👥 4. Patient & Medical Record Management
-*   **Demographic Registers:** Create, search, and manage patient directories.
-*   **Diagnosis and Treatment Logging:** Track description-based diagnoses, prescribe medications, specify exact dosages, and define treatment durations.
-*   **Appointment Scheduler:** Set up, search, and manage appointment times and statuses (Pending, Completed, Cancelled).
-
-### 📦 5. Auxiliary Clinic Services
-*   **Inventory Control:** Track medical supplies, reorder thresholds, and expiration dates.
-*   **Billing & Receipt Generator:** Manage patients' payment transactions, track outstanding balances, and print structured receipts.
-
----
-
-## 🛠️ Technology Stack
-
-*   **GUI Framework:** [CustomTkinter](https://github.com/TomSchimansky/CustomTkinter) (Sleek dark/light appearance, responsive designs)
-*   **Database:** MySQL (Relational tables with foreign key constraints)
-*   **Programming Language:** Python 3
-*   **Libraries:** `mysql-connector-python`, `Pillow` (for profile photo manipulation), `shutil`, `json`
-
----
-
-## 📂 Project Structure
-
-```bash
-Physical_Health_Clinic_DB/
-│
-├── main.py                   # App entrypoint
-├── login.py                  # User authentication and role routing
-├── admin_dashboard.py        # Administrator core dashboard
-├── doctor_dashboard.py       # Doctor clinical workspace & Patient queue
-│
-├── patients.py               # Patient registration and demographic details
-├── appointments.py           # Consultation scheduling and tracker
-├── diagnosis.py              # Diagnosis entries and records
-├── treatment.py              # Prescription and treatment management
-├── user_management.py        # Staff user credential management
-├── health_workers.py         # Clinician/worker profiles & photo uploads
-├── inventory.py              # Pharmaceutical items and expiry alerts
-├── payment.py                # Billing transactions ledger
-├── receipt.py                # Receipt generation and printable layouts
-│
-├── database.py               # MySQL connection initializer
-├── settings.py               # Local configurations and backup tools
-├── assets/                   # Directory storing doctor profile photos
-└── README.md                 # Project documentation
+```
+  Patient Registered
+ (Receptionist)
+       ↓
+ Consultation Billed & Paid
+ (Receptionist / Billing Center)
+       ↓
+ Patient Queued to Assigned Doctor
+ (Doctor Dashboard)
+       ↓
+ Lab Requested (Optional)  →  Perform Test & Save Results  →  View Lab Results
+ (Doctor Dashboard)           (Laboratory Technician)           (Doctor Dashboard)
+       ↓
+ Enter Diagnosis & Treatment
+ (Doctor Dashboard)
+       ↓
+ Prescribe Medicines
+ (Doctor Dashboard)
+       ↓
+ Dispense Medicines & Auto-Decrement Stock
+ (Pharmacist Dashboard)
+       ↓
+ Print Dynamic PDF Receipt & Log Audit Trail
+ (Pharmacist / Receptionist)
 ```
 
 ---
 
-## 🚀 Getting Started
+## 👥 Role-Based Features
 
-### Prerequisites
+### 1. 🔑 Administrator
+*   **User Management**: Add, update, delete, and control active/inactive status of employee accounts.
+*   **Active Services Catalog**: Manage walk-in clinic service items (e.g. X-Ray, ECG, Consultation fees) and their pricing.
+*   **Inventory Control**: Full write-access (Add, Update, Delete, Restock, Expiry alerts) to the clinic's medical inventory.
+*   **Metrics**: View total patients, today's appointments, active doctors, pending laboratory requests, low stock items, and daily revenue statistics.
 
-1.  **Python 3.8+** installed.
-2.  **MySQL Server** active.
-3.  Install dependencies:
-    ```bash
-    pip install customtkinter mysql-connector-python Pillow
-    ```
+### 2. 👤 Receptionist
+*   **Intake & Registration**: Register new patients and choose an assigned doctor.
+*   **Scheduling**: Book clinical appointments.
+*   **Invoicing & Receipts**: Create billing invoices and print itemized PDF receipts for consultation, registration, or walk-in services.
+*   **Queue Management**: Route patient status immediately to the doctor once payments are settled.
 
-### Database Setup
+### 3. 👨‍⚕️ Doctor
+*   **My Patient Queue**: Display only patients assigned directly to the logged-in doctor.
+*   **Lab Orders**: Submit requests to the laboratory.
+*   **Safe Diagnosis**: The system blocks entering a final diagnosis while requested laboratory results are pending.
+*   **Treatment & Prescriptions**: Record diagnoses, input active treatment advice, and draft prescriptions from current inventory stocks.
 
-1.  Create a MySQL database as Pysical_Health_Clinic_DB.
-2.  Import your schemas or migration scripts.
-3.  Configure database credentials in `database.py`.
+### 4. 🔬 Laboratory Technician
+*   **Test Management**: View pending laboratory requests.
+*   **Results Input**: Record findings and close completed tests.
+*   **Auto-billing**: Submitting a test result automatically inserts a pending billing record under the patient's account.
 
-### Execution
+### 5. 💊 Pharmacist
+*   **Dispensing Hub**: View and process pending prescriptions.
+*   **Auto-Inventory Decrement**: Dispensing medicines automatically subtracts stock from the inventory table.
+*   **Financial Integration**: Dispensing immediately locks in prescription billing, creates corresponding receipts, and updates stock metrics.
 
-To run the application, execute:
+### 6. 📊 Accountant
+*   **Financial Logs**: Track total payments, payment methods, and revenue summaries.
+*   **System Ledger**: Query database reports mapping dynamic receipt details.
+
+---
+
+## 🛠 Tech Stack
+
+*   **GUI Framework**: CustomTkinter (Modernized styling over standard Tkinter)
+*   **Database**: MySQL
+*   **PDF Generation**: ReportLab
+*   **Security**: SHA-256 Password Hashing
+
+---
+
+## 🚀 Installation & Setup
+
+### 1. Install Dependencies
+Ensure Python 3 is installed, then run:
 ```bash
-python3 main.py
+pip install customtkinter mysql-connector-python reportlab
+```
+
+### 2. Configure Database Credentials
+Open [database.py](database.py) and enter your local MySQL connection settings:
+```python
+import mysql.connector
+
+def connect_db():
+    conn = mysql.connector.connect(
+        host="localhost",
+        user="YOUR_MYSQL_USER",
+        password="YOUR_MYSQL_PASSWORD",
+        database="YOUR_DATABASE_NAME"
+    )
+    return conn
+```
+
+### 3. Initialize & Seed Database
+Execute the database setup script to drop existing tables, construct the new schema, and populate default credentials/catalog services:
+```bash
+python3 db_schema_setup.py
+```
+
+### 4. Run the Application
+Start the clinical portal by executing:
+```bash
+python3 login.py
 ```
 
 ---
 
-## 🎨 Design Principles
-*   **EHR Aesthetic:** Clean gray backgrounds, professional blue highlights, and standard color cues (green for actions, red for deletes).
-*   **No Overhead Scrolling:** Designed to fit standard screen layouts with optimized widget sizing to prevent cutoffs.
-*   **Role Isolation:** Filters record sets dynamically so clinicians only view their assigned patients, while administrators maintain a global overview.
+## 👤 Default Seeded Accounts
+
+All default passwords are set to `[username]123`. The system automatically encrypts and verifies logins using SHA-256 hashing.
+
+| Role | Username | Plaintext Password |
+| :--- | :--- | :--- |
+| **System Administrator** | `admin` | `admin123` |
+| **Doctor** | `doctor` | `doctor123` |
+| **Receptionist** | `receptionist` | `receptionist123` |
+| **Laboratory Technician** | `labtech` | `labtech123` |
+| **Pharmacist** | `pharmacist` | `pharmacist123` |
+| **Accountant** | `accountant` | `accountant123` |
