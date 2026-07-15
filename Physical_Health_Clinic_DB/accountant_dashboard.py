@@ -184,6 +184,20 @@ class AccountantDashboard(ctk.CTk):
         self.left_col = ctk.CTkFrame(self.data_split_frame, fg_color="transparent")
         self.left_col.pack(side="left", fill="both", expand=True, padx=(0, 5))
 
+        filter_frame = ctk.CTkFrame(self.left_col, fg_color="transparent", height=40)
+        filter_frame.pack(fill="x", pady=(0, 5))
+        filter_frame.pack_propagate(False)
+
+        ctk.CTkLabel(filter_frame, text="Filter Method:", font=("Arial", 12, "bold")).pack(side="left", padx=10)
+        self.method_filter_combo = ctk.CTkComboBox(
+            filter_frame,
+            values=["All", "Cash", "Mobile Money", "Card", "Pending"],
+            width=150,
+            command=lambda choice: self.refresh_dashboard()
+        )
+        self.method_filter_combo.pack(side="left", padx=5)
+        self.method_filter_combo.set("All")
+
         self.payments_table_frame = self.create_table_frame(self.left_col, "💳 Recent Payments", ("ID", "Patient Name", "Amount", "Method", "Date"))
         self.payments_table_frame.pack(fill="both", expand=True)
 
@@ -291,12 +305,26 @@ class AccountantDashboard(ctk.CTk):
             p_table = self.payments_table_frame.table
             for item in p_table.get_children():
                 p_table.delete(item)
-            cursor.execute("""
-                SELECT p.PaymentID, pat.FullName, p.Amount, p.PaymentMethod, DATE(p.PaymentDate)
-                FROM Payment p
-                LEFT JOIN Patients pat ON p.PatientID = pat.PatientID
-                ORDER BY p.PaymentID DESC LIMIT 8
-            """)
+            
+            method_choice = self.method_filter_combo.get()
+            if method_choice == "All":
+                query = """
+                    SELECT p.PaymentID, pat.FullName, p.Amount, p.PaymentMethod, DATE(p.PaymentDate)
+                    FROM Payment p
+                    LEFT JOIN Patients pat ON p.PatientID = pat.PatientID
+                    ORDER BY p.PaymentID DESC LIMIT 8
+                """
+                cursor.execute(query)
+            else:
+                query = """
+                    SELECT p.PaymentID, pat.FullName, p.Amount, p.PaymentMethod, DATE(p.PaymentDate)
+                    FROM Payment p
+                    LEFT JOIN Patients pat ON p.PatientID = pat.PatientID
+                    WHERE p.PaymentMethod = %s
+                    ORDER BY p.PaymentID DESC LIMIT 8
+                """
+                cursor.execute(query, (method_choice,))
+
             for row in cursor.fetchall():
                 p_table.insert("", "end", values=(row[0], row[1], f"Le {row[2]:,.2f}", row[3], str(row[4])))
  

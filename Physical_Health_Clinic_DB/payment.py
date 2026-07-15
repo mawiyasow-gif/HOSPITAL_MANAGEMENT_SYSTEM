@@ -24,12 +24,13 @@ class PaymentWindow(ctk.CTkToplevel):
         self.selected_patient_id = None
         self.selected_amount = 0.00
 
-        # Retrieve logged-in worker ID
         self.worker_id = 2
         self.user_id = 1
+        self.user_role = "Unknown"
         if hasattr(session, "current_user") and session.current_user:
             self.worker_id = session.current_user.get("worker_id", 2)
             self.user_id = session.current_user.get("user_id", 1)
+            self.user_role = session.current_user.get("role", "Unknown")
 
         # Back Button
         back_btn = ctk.CTkButton(
@@ -76,6 +77,17 @@ class PaymentWindow(ctk.CTkToplevel):
 
         ctk.CTkButton(search_frame, text="Search", command=self.search_payment, width=100).pack(side="left", padx=10)
         ctk.CTkButton(search_frame, text="Refresh", command=self.refresh_table, width=100).pack(side="left")
+
+        # Payment Method Filter
+        ctk.CTkLabel(search_frame, text="Method:", font=("Arial", 12, "bold")).pack(side="left", padx=(15, 5))
+        self.filter_combo = ctk.CTkComboBox(
+            search_frame,
+            values=["All", "Cash", "Card", "Mobile Money", "Pending"],
+            width=130,
+            command=lambda choice: self.load_payments()
+        )
+        self.filter_combo.pack(side="left", padx=5)
+        self.filter_combo.set("All")
 
         # Treeview setup
         container = ctk.CTkFrame(self.table_frame, fg_color="transparent")
@@ -219,12 +231,43 @@ class PaymentWindow(ctk.CTkToplevel):
         try:
             conn = connect_db()
             cursor = conn.cursor()
-            cursor.execute("""
+            
+            # Check user role
+            import session
+            user_role = "Unknown"
+            if hasattr(session, "current_user") and session.current_user:
+                user_role = session.current_user.get("role", "Unknown")
+
+            choice = self.filter_combo.get()
+            
+            query = """
                 SELECT p.PaymentID, pat.FullName, p.Amount, p.PaymentType, p.PaymentMethod, p.PaymentDate
                 FROM Payment p
                 LEFT JOIN Patients pat ON p.PatientID = pat.PatientID
-                ORDER BY p.PaymentID DESC
-            """)
+            """
+            conditions = []
+            params = []
+
+            # Role constraint: Pharmacist only sees their own bills
+            if user_role == "Pharmacist":
+                conditions.append("p.BilledBy = %s")
+                params.append(self.worker_id)
+            elif user_role != "Administrator" and user_role != "Accountant" and user_role != "Receptionist":
+                # Other non-privileged roles (like Lab Tech or Doctor) only see their own
+                conditions.append("p.BilledBy = %s")
+                params.append(self.worker_id)
+
+            # Filter condition
+            if choice != "All":
+                conditions.append("p.PaymentMethod = %s")
+                params.append(choice)
+
+            if conditions:
+                query += " WHERE " + " AND ".join(conditions)
+
+            query += " ORDER BY p.PaymentID DESC"
+
+            cursor.execute(query, tuple(params))
             for row in cursor.fetchall():
                 cleaned = ["" if val is None else str(val) for val in row]
                 cleaned[2] = f"Le {float(cleaned[2]):,.2f}" if cleaned[2] else "Le 0.00"
@@ -250,8 +293,12 @@ class PaymentWindow(ctk.CTkToplevel):
 
         # Check status
         if row[4] == "Pending":
-            self.process_btn.configure(state="normal", fg_color="#4CAF50")
-            self.process_btn.configure(text="🔒 Collect Payment & Print")
+            if row[3] == "Medicines" and self.user_role == "Receptionist":
+                self.process_btn.configure(state="disabled", fg_color="gray")
+                self.process_btn.configure(text="❌ Medicines Paid to Pharmacist Only")
+            else:
+                self.process_btn.configure(state="normal", fg_color="#4CAF50")
+                self.process_btn.configure(text="🔒 Collect Payment & Print")
         else:
             self.process_btn.configure(state="disabled", fg_color="gray")
             self.process_btn.configure(text="🔒 Invoice Paid Already")
@@ -364,13 +411,37 @@ class PaymentWindow(ctk.CTkToplevel):
         try:
             conn = connect_db()
             cursor = conn.cursor()
-            cursor.execute("""
+            
+            import session
+            user_role = "Unknown"
+            if hasattr(session, "current_user") and session.current_user:
+                user_role = session.current_user.get("role", "Unknown")
+
+            choice = self.filter_combo.get()
+
+            query = """
                 SELECT p.PaymentID, pat.FullName, p.Amount, p.PaymentType, p.PaymentMethod, p.PaymentDate
                 FROM Payment p
                 LEFT JOIN Patients pat ON p.PatientID = pat.PatientID
-                WHERE pat.FullName LIKE %s OR p.PaymentID LIKE %s
-                ORDER BY p.PaymentID DESC
-            """, (f"%{q}%", f"%{q}%"))
+            """
+            conditions = ["(pat.FullName LIKE %s OR p.PaymentID LIKE %s)"]
+            params = [f"%{q}%", f"%{q}%"]
+
+            if user_role == "Pharmacist":
+                conditions.append("p.BilledBy = %s")
+                params.append(self.worker_id)
+            elif user_role != "Administrator" and user_role != "Accountant" and user_role != "Receptionist":
+                conditions.append("p.BilledBy = %s")
+                params.append(self.worker_id)
+
+            if choice != "All":
+                conditions.append("p.PaymentMethod = %s")
+                params.append(choice)
+
+            query += " WHERE " + " AND ".join(conditions)
+            query += " ORDER BY p.PaymentID DESC"
+
+            cursor.execute(query, tuple(params))
             for row in cursor.fetchall():
                 cleaned = ["" if val is None else str(val) for val in row]
                 cleaned[2] = f"Le {float(cleaned[2]):,.2f}" if cleaned[2] else "Le 0.00"

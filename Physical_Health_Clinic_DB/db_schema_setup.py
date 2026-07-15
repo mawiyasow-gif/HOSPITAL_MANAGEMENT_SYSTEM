@@ -110,7 +110,8 @@ def run_setup():
             CREATE TABLE Hospital_Services (
                 ServiceID INT AUTO_INCREMENT PRIMARY KEY,
                 ServiceName VARCHAR(100) NOT NULL UNIQUE,
-                Price DECIMAL(10, 2) NOT NULL
+                Price DECIMAL(10, 2) NOT NULL,
+                Status ENUM('Active', 'Inactive') DEFAULT 'Active'
             )
         """)
 

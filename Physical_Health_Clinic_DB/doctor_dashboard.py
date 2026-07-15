@@ -219,6 +219,17 @@ class DoctorDashboard(ctk.CTk):
         )
         self.patients_table.pack(fill="both", expand=True, padx=10, pady=10)
         self.patients_table.table.bind("<Double-1>", self.on_patient_double_click)
+        self.patients_table.table.bind("<<TreeviewSelect>>", self.on_assigned_select)
+
+        self.attend_assigned_btn = ctk.CTkButton(
+            self.patients_table_frame,
+            text="🩺 Consult Selected Patient",
+            font=("Arial", 12, "bold"),
+            command=self.attend_assigned_patient,
+            state="disabled",
+            fg_color="gray"
+        )
+        self.attend_assigned_btn.pack(pady=5)
 
         # ==============================
         # Split Table Layout (Appointments / Diagnosis / Treatment)
@@ -500,7 +511,7 @@ class DoctorDashboard(ctk.CTk):
                 notifs.append(f"📅 You have {count} pending consultations scheduled for today.")
 
             # Urgently check inventory of standard items?
-            cursor.execute("SELECT ItemName, Stock FROM Inventory WHERE Stock < 5 LIMIT 3")
+            cursor.execute("SELECT MedicineName, Quantity FROM Inventory WHERE Quantity < 5 LIMIT 3")
             low_stock = cursor.fetchall()
             for item in low_stock:
                 notifs.append(f"🚨 Urgent: Medicine {item[0]} has critically low stock ({item[1]} units left).")
@@ -564,6 +575,54 @@ class DoctorDashboard(ctk.CTk):
             patient_id = row[0]
             # Opens medical history window directly for selected patient
             self.open_medical_history(patient_id)
+
+    def on_assigned_select(self, event):
+        selected = self.patients_table.table.selection()
+        if selected:
+            self.attend_assigned_btn.configure(state="normal", fg_color="#4CAF50")
+        else:
+            self.attend_assigned_btn.configure(state="disabled", fg_color="gray")
+
+    def attend_assigned_patient(self):
+        selected = self.patients_table.table.selection()
+        if not selected:
+            return
+        row = self.patients_table.table.item(selected[0], "values")
+        if row:
+            patient_id = row[0]
+            patient_name = row[1]
+            self.attend_patient_by_id(patient_id, patient_name)
+
+    def attend_patient_by_id(self, patient_id, patient_name):
+        try:
+            conn = connect_db()
+            cursor = conn.cursor()
+            
+            # Find the latest pending/scheduled appointment today or in the future
+            cursor.execute("""
+                SELECT AppointmentID FROM Appointments 
+                WHERE PatientID = %s AND WorkerID = %s AND Status IN ('Pending', 'Scheduled')
+                ORDER BY AppointmentDate ASC, AppointmentTime ASC LIMIT 1
+            """, (patient_id, self.doctor_worker_id))
+            row_app = cursor.fetchone()
+            
+            if row_app:
+                appointment_id = row_app[0]
+            else:
+                # If no pending appointment exists, create a walk-in appointment for today
+                cursor.execute("""
+                    INSERT INTO Appointments (PatientID, WorkerID, AppointmentDate, AppointmentTime, Status)
+                    VALUES (%s, %s, CURDATE(), CURRENT_TIME(), 'Pending')
+                """, (patient_id, self.doctor_worker_id))
+                appointment_id = cursor.lastrowid
+                conn.commit()
+
+            conn.close()
+
+            # Open ConsultationWindow
+            ConsultationWindow(self, appointment_id, patient_id, patient_name, self.doctor_worker_id)
+        except Exception as e:
+            messagebox.showerror("Database Error", f"Failed to start consultation:\n{e}")
 
     def on_unattended_select(self, event):
         """Enable the attend button when a patient is selected in the unattended queue."""
@@ -1115,7 +1174,7 @@ class ConsultationWindow(ctk.CTkToplevel):
                 var = ctk.BooleanVar()
                 cb = ctk.CTkCheckBox(self.tests_frame, text=f"{name} (Le {price:,.2f})", variable=var)
                 cb.pack(anchor="w", padx=10, pady=4)
-                self.test_checkboxes[test_id] = (var, name)
+                self.test_checkboxes[test_id] = (var, name, price)
         except Exception as e:
             print(f"Error loading lab tests list: {e}")
 
@@ -1174,7 +1233,7 @@ class ConsultationWindow(ctk.CTkToplevel):
             print(f"Error checking pending lab status: {e}")
 
     def send_lab_request(self):
-        selected_tests = [test_id for test_id, (var, name) in self.test_checkboxes.items() if var.get()]
+        selected_tests = [test_id for test_id, (var, name, price) in self.test_checkboxes.items() if var.get()]
         if not selected_tests:
             messagebox.showwarning("Selection Warning", "Please select at least one laboratory test.")
             return
@@ -1193,11 +1252,19 @@ class ConsultationWindow(ctk.CTkToplevel):
             """, (self.patient_id, self.doctor_worker_id, self.appointment_id))
             request_id = cursor.lastrowid
             
+            total_price = 0.00
             for test_id in selected_tests:
                 cursor.execute("""
                     INSERT INTO Laboratory_Results (RequestID, TestID, ResultDetails, TestDate, TechnicianID)
                     VALUES (%s, %s, NULL, NULL, NULL)
                 """, (request_id, test_id))
+                total_price += float(self.test_checkboxes[test_id][2])
+
+            # Immediately queue a pending billing payment record for the receptionist
+            cursor.execute("""
+                INSERT INTO Payment (PatientID, Amount, PaymentType, ServiceID, LabRequestID, DispensingID, PaymentMethod, PaymentDate, BilledBy)
+                VALUES (%s, %s, 'Laboratory', NULL, %s, NULL, 'Pending', CURRENT_TIMESTAMP, %s)
+            """, (self.patient_id, total_price, request_id, self.doctor_worker_id))
 
             conn.commit()
             conn.close()
@@ -1206,12 +1273,12 @@ class ConsultationWindow(ctk.CTkToplevel):
             import session
             user_id = session.current_user.get("user_id", 1) if (session and session.current_user) else 1
             from database import log_audit_action
-            log_audit_action(user_id, f"Doctor requested laboratory tests (RequestID: {request_id}) for PatientID: {self.patient_id}")
+            log_audit_action(user_id, f"Doctor requested laboratory tests (RequestID: {request_id}) and billed Le {total_price:,.2f} for PatientID: {self.patient_id}")
             
-            for test_id, (var, name) in self.test_checkboxes.items():
-                var.set(False)
+            for test_id in selected_tests:
+                self.test_checkboxes[test_id][0].set(False)
 
-            messagebox.showinfo("Success", "Laboratory request sent successfully!")
+            messagebox.showinfo("Success", "Laboratory request sent successfully and billed to Receptionist!")
             self.load_lab_requests()
             self.check_pending_lab_status()
         except Exception as e:

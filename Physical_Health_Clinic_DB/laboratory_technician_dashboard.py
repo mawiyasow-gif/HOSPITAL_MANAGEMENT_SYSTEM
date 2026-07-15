@@ -203,7 +203,7 @@ class LaboratoryTechnicianDashboard(ctk.CTk):
         scrollbar = ttk.Scrollbar(container)
         scrollbar.pack(side="right", fill="y")
 
-        columns = ("Request ID", "Date Requested", "Patient Name", "Doctor Name", "Status")
+        columns = ("Request ID", "Date Requested", "Patient Name", "Doctor Name", "Payment Status", "Status")
         self.queue_table = ttk.Treeview(
             container, 
             columns=columns, 
@@ -213,7 +213,8 @@ class LaboratoryTechnicianDashboard(ctk.CTk):
         )
         for col in columns:
             self.queue_table.heading(col, text=col, anchor="w")
-            self.queue_table.column(col, anchor="w", width=200)
+            self.queue_table.column(col, anchor="w", width=180)
+        self.queue_table.column("Request ID", width=100, anchor="center")
 
         self.queue_table.pack(side="left", fill="both", expand=True)
         scrollbar.config(command=self.queue_table.yview)
@@ -224,7 +225,12 @@ class LaboratoryTechnicianDashboard(ctk.CTk):
     def on_request_selected(self, event):
         selected = self.queue_table.selection()
         if selected:
-            self.process_btn.configure(state="normal", fg_color="#1F6AA5")
+            row = self.queue_table.item(selected[0], "values")
+            payment_status = row[4]
+            if payment_status == "Paid":
+                self.process_btn.configure(state="normal", fg_color="#1F6AA5")
+            else:
+                self.process_btn.configure(state="disabled", fg_color="gray")
         else:
             self.process_btn.configure(state="disabled", fg_color="gray")
 
@@ -257,7 +263,11 @@ class LaboratoryTechnicianDashboard(ctk.CTk):
             conn = connect_db()
             cursor = conn.cursor()
             cursor.execute("""
-                SELECT lr.RequestID, lr.RequestDate, p.FullName, hw.FullName, lr.Status
+                SELECT lr.RequestID, lr.RequestDate, p.FullName, hw.FullName, 
+                       (SELECT IF(COUNT(*) > 0, 'Paid', 'Unpaid') 
+                        FROM Payment py 
+                        WHERE py.LabRequestID = lr.RequestID AND py.PaymentMethod != 'Pending') AS PaymentStatus,
+                       lr.Status
                 FROM Laboratory_Requests lr
                 LEFT JOIN Patients p ON lr.PatientID = p.PatientID
                 LEFT JOIN Health_Workers hw ON lr.DoctorID = hw.WorkerID
@@ -277,6 +287,11 @@ class LaboratoryTechnicianDashboard(ctk.CTk):
             return
         
         row = self.queue_table.item(selected[0], "values")
+        payment_status = row[4]
+        if payment_status != "Paid":
+            messagebox.showwarning("Payment Required", "This patient has not paid for this laboratory request yet.")
+            return
+
         request_id = row[0]
         patient_name = row[2]
         
@@ -416,11 +431,7 @@ class LabResultsEntryWindow(ctk.CTkToplevel):
             """, (self.request_id,))
             total_price = cursor.fetchone()[0] or 0.00
 
-            # 5. Insert billing record into Payment table
-            cursor.execute("""
-                INSERT INTO Payment (PatientID, Amount, PaymentType, ServiceID, LabRequestID, DispensingID, PaymentMethod, PaymentDate, BilledBy)
-                VALUES (%s, %s, 'Laboratory', NULL, %s, NULL, 'Pending', CURRENT_TIMESTAMP, %s)
-            """, (patient_id, total_price, self.request_id, self.parent.lab_worker_id))
+            # 5. Billing record is created upfront by Doctor, no need to recreate here.
 
             conn.commit()
             conn.close()
@@ -429,7 +440,6 @@ class LabResultsEntryWindow(ctk.CTkToplevel):
             user_id = self.parent.lab_user.get("user_id", 1)
             from database import log_audit_action
             log_audit_action(user_id, f"Uploaded laboratory results for RequestID: {self.request_id} (PatientID: {patient_id})")
-            log_audit_action(user_id, f"Queued laboratory payment of Le {total_price:,.2f} for PatientID: {patient_id} (RequestID: {self.request_id})")
  
             messagebox.showinfo("Success", "Laboratory results submitted and request marked as completed!")
             self.parent.refresh_dashboard()

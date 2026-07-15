@@ -695,7 +695,7 @@ class AdminDashboard(ctk.CTk):
 
             conn = connect_db()
             cursor = conn.cursor()
-            cursor.execute("SELECT ItemName, Stock FROM Inventory WHERE Stock < 10")
+            cursor.execute("SELECT MedicineName, Quantity FROM Inventory WHERE Quantity < 10")
             rows = cursor.fetchall()
             conn.close()
 
@@ -713,7 +713,7 @@ class AdminDashboard(ctk.CTk):
 
             conn = connect_db()
             cursor = conn.cursor()
-            cursor.execute("SELECT ItemName, ExpiryDate FROM Inventory WHERE ExpiryDate < CURDATE()")
+            cursor.execute("SELECT MedicineName, ExpiryDate FROM Inventory WHERE ExpiryDate < CURDATE()")
             rows = cursor.fetchall()
             conn.close()
 
@@ -775,7 +775,7 @@ class AdminDashboard(ctk.CTk):
                 notifications.append(f"👥 {new_patients} new patient(s) registered in the last 24 hours")
 
             # Low Stock
-            cursor.execute("SELECT COUNT(*) FROM Inventory WHERE Stock < 10")
+            cursor.execute("SELECT COUNT(*) FROM Inventory WHERE Quantity < 10")
             low_stock_count = cursor.fetchone()[0]
             if low_stock_count > 0:
                 notifications.append(f"🟠 {low_stock_count} medicine(s) with low stock")

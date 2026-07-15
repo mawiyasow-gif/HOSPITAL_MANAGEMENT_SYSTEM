@@ -106,11 +106,15 @@ class PatientWindow(ctk.CTkToplevel):
         button_frame = ctk.CTkFrame(form_frame, fg_color="transparent")
         button_frame.pack(pady=25)
 
-        ctk.CTkButton(button_frame, text="➕ Add", width=140, command=self.add_patient).grid(row=0, column=0, padx=5, pady=5)
-        ctk.CTkButton(button_frame, text="✏ Update", width=140, command=self.update_patient).grid(row=0, column=1, padx=5, pady=5)
+        self.add_btn = ctk.CTkButton(button_frame, text="➕ Add", width=140, command=self.add_patient)
+        self.add_btn.grid(row=0, column=0, padx=5, pady=5)
+        self.update_btn = ctk.CTkButton(button_frame, text="✏ Update", width=140, command=self.update_patient)
+        self.update_btn.grid(row=0, column=1, padx=5, pady=5)
 
-        ctk.CTkButton(button_frame, text="❌ Delete", width=140, command=self.delete_patient).grid(row=1, column=0, padx=5, pady=5)
-        ctk.CTkButton(button_frame, text="🧹 Clear", width=140, command=self.clear_field).grid(row=1, column=1, padx=5, pady=5)
+        self.delete_btn = ctk.CTkButton(button_frame, text="❌ Delete", width=140, command=self.delete_patient)
+        self.delete_btn.grid(row=1, column=0, padx=5, pady=5)
+        self.clear_btn = ctk.CTkButton(button_frame, text="🧹 Clear", width=140, command=self.clear_field)
+        self.clear_btn.grid(row=1, column=1, padx=5, pady=5)
 
         # =========================
         # Right Frame (Table)
@@ -179,6 +183,34 @@ class PatientWindow(ctk.CTkToplevel):
         # Bind row selection to load patient details into form fields
         self.table.bind("<<TreeviewSelect>>", self.load_patient)
 
+        # Check user role from session
+        import session
+        self.user_role = "Unknown"
+        if hasattr(session, "current_user") and session.current_user:
+            self.user_role = session.current_user.get("role", "Unknown")
+
+        if self.user_role != "Receptionist":
+            self.add_btn.configure(state="disabled")
+            self.update_btn.configure(state="disabled")
+            self.delete_btn.configure(state="disabled")
+            self.fullname.configure(state="disabled")
+            self.dob.configure(state="disabled")
+            self.gender.configure(state="disabled")
+            self.phone.configure(state="disabled")
+            self.address.configure(state="disabled")
+            self.doctor_combo.configure(state="disabled")
+
+        if self.user_role == "Doctor":
+            self.consult_btn = ctk.CTkButton(
+                button_frame,
+                text="🩺 Consult Patient",
+                width=290,
+                fg_color="#4CAF50",
+                hover_color="#43A047",
+                command=self.consult_patient
+            )
+            self.consult_btn.grid(row=2, column=0, columnspan=2, padx=5, pady=10)
+
         print("[DEBUG] PatientWindow initialized. Loading data automatically...")
         # Load patient records from database automatically on startup
         self.load_data()
@@ -228,6 +260,12 @@ class PatientWindow(ctk.CTkToplevel):
 
     def add_patient(self):
         """Add a new patient record, create appointment, and insert pending consultation payment."""
+        import session
+        user_role = session.current_user.get("role", "Unknown") if (hasattr(session, "current_user") and session.current_user) else "Unknown"
+        if user_role != "Receptionist":
+            messagebox.showerror("Permission Denied", "Only receptionist staff can register patients.")
+            return
+
         name = self.fullname.get().strip()
         dob = self.dob.get().strip()
         gender = self.gender.get()
@@ -300,6 +338,12 @@ class PatientWindow(ctk.CTkToplevel):
 
     def update_patient(self):
         """Update the selected patient record in the database."""
+        import session
+        user_role = session.current_user.get("role", "Unknown") if (hasattr(session, "current_user") and session.current_user) else "Unknown"
+        if user_role != "Receptionist":
+            messagebox.showerror("Permission Denied", "Only receptionist staff can update patient records.")
+            return
+
         if not self.selected_patient_id:
             messagebox.showwarning("Selection Warning", "Please select a patient from the list to update.")
             return
@@ -334,6 +378,12 @@ class PatientWindow(ctk.CTkToplevel):
 
     def delete_patient(self):
         """Delete the selected patient record from the database."""
+        import session
+        user_role = session.current_user.get("role", "Unknown") if (hasattr(session, "current_user") and session.current_user) else "Unknown"
+        if user_role != "Receptionist":
+            messagebox.showerror("Permission Denied", "Only receptionist staff can delete patient records.")
+            return
+
         if not self.selected_patient_id:
             messagebox.showwarning("Selection Warning", "Please select a patient from the list to delete.")
             return
@@ -379,6 +429,16 @@ class PatientWindow(ctk.CTkToplevel):
 
         self.selected_patient_id = row_values[0]
         
+        # Temporarily enable fields to load text if disabled
+        import session
+        user_role = session.current_user.get("role", "Unknown") if (hasattr(session, "current_user") and session.current_user) else "Unknown"
+        if user_role != "Receptionist":
+            self.fullname.configure(state="normal")
+            self.dob.configure(state="normal")
+            self.gender.configure(state="normal")
+            self.phone.configure(state="normal")
+            self.address.configure(state="normal")
+
         self.fullname.delete(0, "end")
         self.fullname.insert(0, row_values[1])
 
@@ -392,6 +452,14 @@ class PatientWindow(ctk.CTkToplevel):
 
         self.address.delete(0, "end")
         self.address.insert(0, row_values[5])
+
+        # Re-disable fields
+        if user_role != "Receptionist":
+            self.fullname.configure(state="disabled")
+            self.dob.configure(state="disabled")
+            self.gender.configure(state="disabled")
+            self.phone.configure(state="disabled")
+            self.address.configure(state="disabled")
 
     def search_patient(self):
         """Search and display patients matching the query from the search entry."""
@@ -443,3 +511,14 @@ class PatientWindow(ctk.CTkToplevel):
         except Exception as e:
             print(f"[ERROR] search_patient() failed: {e}")
             messagebox.showerror("Database Error", f"Failed to search patients:\n{e}")
+
+    def consult_patient(self):
+        if not self.selected_patient_id:
+            messagebox.showwarning("Selection Warning", "Please select a patient from the list.")
+            return
+        
+        patient_name = self.fullname.get()
+        self.destroy()
+        
+        if hasattr(self.master, "attend_patient_by_id"):
+            self.master.attend_patient_by_id(self.selected_patient_id, patient_name)

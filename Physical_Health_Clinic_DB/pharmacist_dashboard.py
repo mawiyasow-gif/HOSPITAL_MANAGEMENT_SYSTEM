@@ -396,6 +396,13 @@ class MedicineDispensingWindow(ctk.CTkToplevel):
         if not confirm:
             return
 
+        # Prompt for payment method
+        dialog = PaymentMethodDialog(self)
+        self.wait_window(dialog)
+        method = dialog.selected_method
+        if not method:
+            return
+
         try:
             conn = connect_db()
             cursor = conn.cursor()
@@ -452,8 +459,8 @@ class MedicineDispensingWindow(ctk.CTkToplevel):
             total_amount = qty_prescribed * float(selling_price)
             cursor.execute("""
                 INSERT INTO Payment (PatientID, Amount, PaymentType, ServiceID, LabRequestID, DispensingID, PaymentMethod, PaymentDate, BilledBy)
-                VALUES (%s, %s, 'Medicines', NULL, NULL, %s, 'Pending', CURRENT_TIMESTAMP, %s)
-            """, (patient_id, total_amount, dispensing_id, self.master.pharmacist_worker_id))
+                VALUES (%s, %s, 'Medicines', NULL, NULL, %s, %s, CURRENT_TIMESTAMP, %s)
+            """, (patient_id, total_amount, dispensing_id, method, self.master.pharmacist_worker_id))
             payment_id = cursor.lastrowid
 
             # 8. Create Receipt record (prints medicine receipt)
@@ -503,6 +510,42 @@ class MedicineDispensingWindow(ctk.CTkToplevel):
         r_win = ReceiptWindow(self)
         r_win.selected_receipt_id = receipt_id
         r_win.load_selected_receipt_details(receipt_id)
+
+
+class PaymentMethodDialog(ctk.CTkToplevel):
+    def __init__(self, parent):
+        super().__init__(parent)
+        self.title("Select Payment Method")
+        self.geometry("420x220")
+        self.resizable(False, False)
+        self.transient(parent)
+        self.grab_set()
+
+        self.selected_method = None
+
+        ctk.CTkLabel(
+            self, 
+            text="💳 Select Payment Method for Medicines", 
+            font=("Arial", 16, "bold"),
+            text_color="#1F6AA5"
+        ).pack(pady=25)
+
+        btn_frame = ctk.CTkFrame(self, fg_color="transparent")
+        btn_frame.pack(pady=10)
+
+        ctk.CTkButton(btn_frame, text="💵 Cash", width=100, command=lambda: self.select("Cash")).grid(row=0, column=0, padx=5)
+        ctk.CTkButton(btn_frame, text="📱 Mobile Money", width=120, command=lambda: self.select("Mobile Money")).grid(row=0, column=1, padx=5)
+        ctk.CTkButton(btn_frame, text="💳 Card", width=100, command=lambda: self.select("Card")).grid(row=0, column=2, padx=5)
+
+        self.protocol("WM_DELETE_WINDOW", self.on_close)
+
+    def select(self, method):
+        self.selected_method = method
+        self.destroy()
+
+    def on_close(self):
+        self.selected_method = None
+        self.destroy()
 
 
 if __name__ == "__main__":
