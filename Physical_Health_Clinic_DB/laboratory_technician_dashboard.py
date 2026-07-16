@@ -144,18 +144,26 @@ class LaboratoryTechnicianDashboard(ctk.CTk):
         self.completed_card.pack(side="left", padx=10, expand=True, fill="x")
 
         # ==============================
-        # Pending Requests Section
-        # Main Layout (Requests Queue Frame)
+        # Requests & History Section
+        # ==============================
         self.table_frame = ctk.CTkFrame(self.scrollable_frame, fg_color="#FFFFFF", border_color=dashboard_theme.BORDER_COLOR, border_width=1, corner_radius=12)
         self.table_frame.pack(fill="both", expand=True, pady=10)
 
-        table_header = ctk.CTkFrame(self.table_frame, fg_color="transparent")
-        table_header.pack(fill="x", padx=15, pady=(15, 5))
+        # Tabview container
+        self.tabview = ctk.CTkTabview(self.table_frame, height=550)
+        self.tabview.pack(fill="both", expand=True, padx=15, pady=10)
+
+        self.tab_pending = self.tabview.add("⏳ Pending Requests")
+        self.tab_completed = self.tabview.add("✅ Completed Tests History")
+
+        # Table header inside tab_pending
+        table_header = ctk.CTkFrame(self.tab_pending, fg_color="transparent")
+        table_header.pack(fill="x", padx=15, pady=(5, 5))
 
         ctk.CTkLabel(
             table_header, 
             text="📋 Pending Laboratory Requests Queue", 
-            font=("Arial", 16, "bold"), 
+            font=("Arial", 14, "bold"), 
             text_color=dashboard_theme.TEXT_PRIMARY
         ).pack(side="left")
 
@@ -169,8 +177,9 @@ class LaboratoryTechnicianDashboard(ctk.CTk):
         )
         self.process_btn.pack(side="right")
 
-        # Setup Table
+        # Setup Tables
         self.setup_queue_table()
+        self.setup_completed_table()
 
         # Load Data
         self.refresh_dashboard()
@@ -184,7 +193,7 @@ class LaboratoryTechnicianDashboard(ctk.CTk):
         return dashboard_theme.create_modern_stat_card(parent, icon, title, value, color)
 
     def setup_queue_table(self):
-        container = ctk.CTkFrame(self.table_frame, fg_color="transparent")
+        container = ctk.CTkFrame(self.tab_pending, fg_color="transparent")
         container.pack(fill="both", expand=True, padx=15, pady=(0, 15))
 
         scrollbar = ttk.Scrollbar(container)
@@ -244,6 +253,7 @@ class LaboratoryTechnicianDashboard(ctk.CTk):
     def refresh_dashboard(self):
         self.load_statistics()
         self.load_pending_requests()
+        self.load_completed_requests()
         self.process_btn.configure(state="disabled", fg_color="gray")
 
     def load_statistics(self):
@@ -312,6 +322,55 @@ class LaboratoryTechnicianDashboard(ctk.CTk):
             from login import LoginApp
             app = LoginApp()
             app.mainloop()
+
+    def setup_completed_table(self):
+        container = ctk.CTkFrame(self.tab_completed, fg_color="transparent")
+        container.pack(fill="both", expand=True, padx=15, pady=(5, 15))
+
+        scrollbar = ttk.Scrollbar(container)
+        scrollbar.pack(side="right", fill="y")
+
+        columns = ("Request ID", "Completed Date", "Patient Name", "Doctor Name", "Test Details")
+        self.completed_table = ttk.Treeview(
+            container, 
+            columns=columns, 
+            show="headings", 
+            yscrollcommand=scrollbar.set,
+            height=15
+        )
+        for col in columns:
+            self.completed_table.heading(col, text=col, anchor="w")
+            self.completed_table.column(col, anchor="w", width=180)
+        self.completed_table.column("Request ID", width=100, anchor="center")
+        self.completed_table.column("Test Details", width=400)
+
+        self.completed_table.pack(side="left", fill="both", expand=True)
+        scrollbar.config(command=self.completed_table.yview)
+
+    def load_completed_requests(self):
+        for item in self.completed_table.get_children():
+            self.completed_table.delete(item)
+        try:
+            conn = connect_db()
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT lr.RequestID, res.TestDate, p.FullName, hw.FullName, 
+                       GROUP_CONCAT(CONCAT(lt.TestName, ': ', res.ResultDetails) SEPARATOR '; ') AS TestDetails
+                FROM Laboratory_Requests lr
+                LEFT JOIN Patients p ON lr.PatientID = p.PatientID
+                LEFT JOIN Health_Workers hw ON lr.DoctorID = hw.WorkerID
+                JOIN Laboratory_Results res ON lr.RequestID = res.RequestID
+                JOIN Laboratory_Tests lt ON res.TestID = lt.TestID
+                WHERE lr.Status = 'Completed' AND res.TechnicianID = %s
+                GROUP BY lr.RequestID, res.TestDate, p.FullName, hw.FullName
+                ORDER BY res.TestDate DESC
+            """, (self.lab_worker_id,))
+            for row in cursor.fetchall():
+                cleaned = ["" if val is None else str(val) for val in row]
+                self.completed_table.insert("", "end", values=cleaned)
+            conn.close()
+        except Exception as e:
+            print(f"Error loading completed requests: {e}")
 
 
 class LabResultsEntryWindow(ctk.CTkToplevel):
@@ -453,6 +512,56 @@ class LabResultsEntryWindow(ctk.CTkToplevel):
             self.destroy()
         except Exception as e:
             messagebox.showerror("Database Error", f"Failed to submit laboratory results:\n{e}")
+
+
+    def setup_completed_table(self):
+        container = ctk.CTkFrame(self.tab_completed, fg_color="transparent")
+        container.pack(fill="both", expand=True, padx=15, pady=(5, 15))
+
+        scrollbar = ttk.Scrollbar(container)
+        scrollbar.pack(side="right", fill="y")
+
+        columns = ("Request ID", "Completed Date", "Patient Name", "Doctor Name", "Test Details")
+        self.completed_table = ttk.Treeview(
+            container, 
+            columns=columns, 
+            show="headings", 
+            yscrollcommand=scrollbar.set,
+            height=15
+        )
+        for col in columns:
+            self.completed_table.heading(col, text=col, anchor="w")
+            self.completed_table.column(col, anchor="w", width=180)
+        self.completed_table.column("Request ID", width=100, anchor="center")
+        self.completed_table.column("Test Details", width=400)
+
+        self.completed_table.pack(side="left", fill="both", expand=True)
+        scrollbar.config(command=self.completed_table.yview)
+
+    def load_completed_requests(self):
+        for item in self.completed_table.get_children():
+            self.completed_table.delete(item)
+        try:
+            conn = connect_db()
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT lr.RequestID, res.TestDate, p.FullName, hw.FullName, 
+                       GROUP_CONCAT(CONCAT(lt.TestName, ': ', res.ResultDetails) SEPARATOR '; ') AS TestDetails
+                FROM Laboratory_Requests lr
+                LEFT JOIN Patients p ON lr.PatientID = p.PatientID
+                LEFT JOIN Health_Workers hw ON lr.DoctorID = hw.WorkerID
+                JOIN Laboratory_Results res ON lr.RequestID = res.RequestID
+                JOIN Laboratory_Tests lt ON res.TestID = lt.TestID
+                WHERE lr.Status = 'Completed' AND res.TechnicianID = %s
+                GROUP BY lr.RequestID, res.TestDate, p.FullName, hw.FullName
+                ORDER BY res.TestDate DESC
+            """, (self.lab_worker_id,))
+            for row in cursor.fetchall():
+                cleaned = ["" if val is None else str(val) for val in row]
+                self.completed_table.insert("", "end", values=cleaned)
+            conn.close()
+        except Exception as e:
+            print(f"Error loading completed requests: {e}")
 
 
 if __name__ == "__main__":
