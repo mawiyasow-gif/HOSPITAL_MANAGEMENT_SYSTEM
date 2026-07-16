@@ -173,7 +173,8 @@ class LoginApp(ctk.CTk):
                     "user_id": user_id,
                     "worker_id": worker_id,
                     "full_name": full_name,
-                    "role": role
+                    "role": role,
+                    "username": user
                 }
                 import session
                 session.current_user = current_user
