@@ -3,8 +3,10 @@ from tkinter import ttk, messagebox
 from datetime import datetime
 from database import connect_db
 
-ctk.set_appearance_mode("Light")
-ctk.set_default_color_theme("blue")
+import dashboard_theme
+
+# Set appearance mode and color theme
+dashboard_theme.apply_global_theme()
 
 class LaboratoryTechnicianDashboard(ctk.CTk):
     """Laboratory Technician Dashboard for the Physical Health Clinic Record System."""
@@ -28,7 +30,7 @@ class LaboratoryTechnicianDashboard(ctk.CTk):
         # ==============================
         # Main Container
         # ==============================
-        self.main_container = ctk.CTkFrame(self)
+        self.main_container = ctk.CTkFrame(self, fg_color=dashboard_theme.BG_COLOR)
         self.main_container.pack(fill="both", expand=True)
 
         # ==============================
@@ -37,13 +39,14 @@ class LaboratoryTechnicianDashboard(ctk.CTk):
         self.sidebar = ctk.CTkFrame(self.main_container, width=250, corner_radius=0)
         self.sidebar.pack(side="left", fill="y")
         self.sidebar.pack_propagate(False)
+        dashboard_theme.style_sidebar(self.sidebar)
 
         # Sidebar Title
         sidebar_title = ctk.CTkLabel(
             self.sidebar,
             text="🧪 LAB PANEL",
-            font=("Arial", 22, "bold"),
-            text_color="#1F6AA5"
+            font=("Arial", 18, "bold"),
+            text_color=dashboard_theme.TEXT_PRIMARY
         )
         sidebar_title.pack(pady=30)
 
@@ -59,47 +62,51 @@ class LaboratoryTechnicianDashboard(ctk.CTk):
                     self.sidebar,
                     text=text,
                     width=210,
-                    height=45,
-                    font=("Arial", 15, "bold"),
+                    height=40,
+                    font=("Arial", 13, "bold"),
                     anchor="w",
-                    fg_color="#D32F2F",
+                    fg_color=dashboard_theme.ACCENT_RED,
                     hover_color="#B71C1C",
                     command=command
                 )
                 btn.pack(side="bottom", pady=25)
             else:
-                btn = ctk.CTkButton(
+                is_active = (text == "🏠 Dashboard")
+                btn = dashboard_theme.create_sidebar_button(
                     self.sidebar,
                     text=text,
-                    width=210,
-                    height=45,
-                    font=("Arial", 15, "bold"),
-                    anchor="w",
-                    command=command
+                    command=command,
+                    active=is_active
                 )
                 btn.pack(pady=6)
 
         # ==============================
         # Main Content Area
         # ==============================
-        self.content_frame = ctk.CTkFrame(self.main_container, corner_radius=0)
+        self.content_frame = ctk.CTkFrame(self.main_container, corner_radius=0, fg_color=dashboard_theme.BG_COLOR)
         self.content_frame.pack(side="right", fill="both", expand=True)
 
-        self.scrollable_frame = ctk.CTkScrollableFrame(self.content_frame, corner_radius=0)
+        self.scrollable_frame = ctk.CTkScrollableFrame(self.content_frame, corner_radius=0, fg_color=dashboard_theme.BG_COLOR)
         self.scrollable_frame.pack(fill="both", expand=True, padx=15, pady=15)
 
         # ==============================
         # Header Info Bar
         # ==============================
-        self.header_frame = ctk.CTkFrame(self.scrollable_frame)
+        self.header_frame = ctk.CTkFrame(
+            self.scrollable_frame,
+            fg_color="#FFFFFF",
+            border_color=dashboard_theme.BORDER_COLOR,
+            border_width=1,
+            corner_radius=12
+        )
         self.header_frame.pack(fill="x", pady=(0, 10))
 
-        welcome_text = f"👋 Welcome, {self.lab_user['full_name']} (Lab Technician)"
+        welcome_text = f"Welcome back, {self.lab_user['full_name']}! 👋"
         self.welcome_lbl = ctk.CTkLabel(
             self.header_frame,
             text=welcome_text,
-            font=("Arial", 16, "bold"),
-            text_color="#1F6AA5"
+            font=("Arial", 22, "bold"),
+            text_color=dashboard_theme.TEXT_PRIMARY
         )
         self.welcome_lbl.pack(side="left", padx=20, pady=15)
 
@@ -111,15 +118,15 @@ class LaboratoryTechnicianDashboard(ctk.CTk):
             self.clock_frame,
             text=datetime.now().strftime("%A, %d %B %Y"),
             font=("Arial", 12, "bold"),
-            text_color="gray"
+            text_color=dashboard_theme.TEXT_SECONDARY
         )
         self.date_lbl.pack()
 
         self.time_lbl = ctk.CTkLabel(
             self.clock_frame,
             text="00:00:00",
-            font=("Arial", 20, "bold"),
-            text_color="#1F6AA5"
+            font=("Arial", 18, "bold"),
+            text_color=dashboard_theme.ACCENT_BLUE
         )
         self.time_lbl.pack()
         self.update_clock()
@@ -138,19 +145,18 @@ class LaboratoryTechnicianDashboard(ctk.CTk):
 
         # ==============================
         # Pending Requests Section
-        # ==============================
-        self.table_frame = ctk.CTkFrame(self.scrollable_frame)
-        self.table_frame.pack(fill="x", pady=15)
+        # Main Layout (Requests Queue Frame)
+        self.table_frame = ctk.CTkFrame(self.scrollable_frame, fg_color="#FFFFFF", border_color=dashboard_theme.BORDER_COLOR, border_width=1, corner_radius=12)
+        self.table_frame.pack(fill="both", expand=True, pady=10)
 
-        # Table title and action button
         table_header = ctk.CTkFrame(self.table_frame, fg_color="transparent")
-        table_header.pack(fill="x", padx=15, pady=(10, 5))
-        
+        table_header.pack(fill="x", padx=15, pady=(15, 5))
+
         ctk.CTkLabel(
             table_header, 
             text="📋 Pending Laboratory Requests Queue", 
             font=("Arial", 16, "bold"), 
-            text_color="#1F6AA5"
+            text_color=dashboard_theme.TEXT_PRIMARY
         ).pack(side="left")
 
         self.process_btn = ctk.CTkButton(
@@ -174,34 +180,35 @@ class LaboratoryTechnicianDashboard(ctk.CTk):
         self.after(1000, self.update_clock)
 
     def create_stat_card(self, parent, icon, title, value, color):
-        card = ctk.CTkFrame(parent, corner_radius=10)
-        accent_bar = ctk.CTkFrame(card, width=5, corner_radius=2, fg_color=color)
-        accent_bar.pack(side="left", fill="y", padx=(10, 5), pady=10)
-
-        content_frame = ctk.CTkFrame(card, fg_color="transparent")
-        content_frame.pack(side="left", fill="both", expand=True, padx=5, pady=5)
-
-        header_frame = ctk.CTkFrame(content_frame, fg_color="transparent")
-        header_frame.pack(fill="x", pady=(5, 2))
-
-        icon_label = ctk.CTkLabel(header_frame, text=icon, font=("Arial", 18))
-        icon_label.pack(side="left")
-
-        title_label = ctk.CTkLabel(header_frame, text=f"  {title}", font=("Arial", 11, "bold"), text_color=("#4A5568", "#CBD5E0"))
-        title_label.pack(side="left")
-
-        value_label = ctk.CTkLabel(content_frame, text=value, font=("Arial", 20, "bold"), text_color="#1F6AA5")
-        value_label.pack(anchor="w", padx=5, pady=(2, 5))
-        
-        card.value_label = value_label
-        return card
+        """Create a modern statistics card."""
+        return dashboard_theme.create_modern_stat_card(parent, icon, title, value, color)
 
     def setup_queue_table(self):
         container = ctk.CTkFrame(self.table_frame, fg_color="transparent")
-        container.pack(fill="both", expand=True, padx=15, pady=10)
+        container.pack(fill="both", expand=True, padx=15, pady=(0, 15))
 
         scrollbar = ttk.Scrollbar(container)
         scrollbar.pack(side="right", fill="y")
+
+        # Styling
+        style = ttk.Style()
+        style.theme_use("clam")
+        style.configure(
+            "Treeview",
+            background="#FFFFFF",
+            foreground="#1E293B",
+            fieldbackground="#FFFFFF",
+            rowheight=35,
+            font=("Arial", 11)
+        )
+        style.configure(
+            "Treeview.Heading",
+            background="#F1F5F9",
+            foreground="#475569",
+            font=("Arial", 11, "bold"),
+            relief="flat"
+        )
+        style.map("Treeview", background=[("selected", "#E2E8F0")], foreground=[("selected", "#0F172A")])
 
         columns = ("Request ID", "Date Requested", "Patient Name", "Doctor Name", "Payment Status", "Status")
         self.queue_table = ttk.Treeview(
@@ -228,7 +235,7 @@ class LaboratoryTechnicianDashboard(ctk.CTk):
             row = self.queue_table.item(selected[0], "values")
             payment_status = row[4]
             if payment_status == "Paid":
-                self.process_btn.configure(state="normal", fg_color="#1F6AA5")
+                self.process_btn.configure(state="normal", fg_color=dashboard_theme.ACCENT_BLUE)
             else:
                 self.process_btn.configure(state="disabled", fg_color="gray")
         else:

@@ -3,9 +3,10 @@ from tkinter import ttk, messagebox
 from datetime import datetime
 from database import connect_db
 
+import dashboard_theme
+
 # Set appearance mode and color theme
-ctk.set_appearance_mode("Light")
-ctk.set_default_color_theme("blue")
+dashboard_theme.apply_global_theme()
 
 
 class ReceptionistDashboard(ctk.CTk):
@@ -36,7 +37,7 @@ class ReceptionistDashboard(ctk.CTk):
         # ==========================================
         # Main Layout Frame
         # ==========================================
-        self.main_container = ctk.CTkFrame(self)
+        self.main_container = ctk.CTkFrame(self, fg_color=dashboard_theme.BG_COLOR)
         self.main_container.pack(fill="both", expand=True)
 
         # ==========================================
@@ -45,13 +46,14 @@ class ReceptionistDashboard(ctk.CTk):
         self.sidebar = ctk.CTkFrame(self.main_container, width=250, corner_radius=0)
         self.sidebar.pack(side="left", fill="y")
         self.sidebar.pack_propagate(False)
+        dashboard_theme.style_sidebar(self.sidebar)
 
         # Sidebar Title
         sidebar_title = ctk.CTkLabel(
             self.sidebar,
             text="🏥 RECEPTION PANEL",
-            font=("Arial", 20, "bold"),
-            text_color="#1F6AA5"
+            font=("Arial", 18, "bold"),
+            text_color=dashboard_theme.TEXT_PRIMARY
         )
         sidebar_title.pack(pady=(30, 20))
 
@@ -74,50 +76,57 @@ class ReceptionistDashboard(ctk.CTk):
                     self.sidebar,
                     text=text,
                     width=210,
-                    height=45,
-                    font=("Arial", 15, "bold"),
+                    height=40,
+                    font=("Arial", 13, "bold"),
                     anchor="w",
-                    fg_color="#D32F2F",
+                    fg_color=dashboard_theme.ACCENT_RED,
                     hover_color="#B71C1C",
                     command=command
                 )
                 btn.pack(side="bottom", pady=25)
             else:
-                btn = ctk.CTkButton(
+                is_active = (text == "🏠 Dashboard")
+                btn = dashboard_theme.create_sidebar_button(
                     self.sidebar,
                     text=text,
-                    width=210,
-                    height=45,
-                    font=("Arial", 15, "bold"),
-                    anchor="w",
-                    command=command
+                    command=command,
+                    active=is_active
                 )
                 btn.pack(pady=6)
 
         # ==========================================
         # Right View Area (Scrollable Main View)
         # ==========================================
-        self.content_frame = ctk.CTkFrame(self.main_container, corner_radius=0)
+        self.content_frame = ctk.CTkFrame(self.main_container, corner_radius=0, fg_color=dashboard_theme.BG_COLOR)
         self.content_frame.pack(side="right", fill="both", expand=True)
 
-        self.scrollable_frame = ctk.CTkScrollableFrame(self.content_frame, corner_radius=0)
+        self.scrollable_frame = ctk.CTkScrollableFrame(self.content_frame, corner_radius=0, fg_color=dashboard_theme.BG_COLOR)
         self.scrollable_frame.pack(fill="both", expand=True, padx=15, pady=15)
 
         # ==========================================
         # Header Info Bar
         # ==========================================
-        self.header_frame = ctk.CTkFrame(self.scrollable_frame)
+        self.header_frame = ctk.CTkFrame(
+            self.scrollable_frame,
+            fg_color="#FFFFFF",
+            border_color=dashboard_theme.BORDER_COLOR,
+            border_width=1,
+            corner_radius=12
+        )
         self.header_frame.pack(fill="x", pady=(0, 10))
 
         # Clinic Branding & Logged In User Info
-        welcome_text = f"👋 Welcome, {self.receptionist_user['full_name']} (Receptionist)"
+        welcome_text = f"Welcome back, {self.receptionist_user['full_name']}! 👋"
         self.welcome_lbl = ctk.CTkLabel(
             self.header_frame,
             text=welcome_text,
-            font=("Arial", 16, "bold"),
-            text_color="#1F6AA5"
+            font=("Arial", 22, "bold"),
+            text_color=dashboard_theme.TEXT_PRIMARY
         )
-        self.welcome_lbl.pack(side="left", padx=20, pady=15)
+        self.welcome_lbl.pack(side="left", padx=20, pady=(15, 5))
+        
+        # Subtitle packed beneath welcome message (simulated via y-padding or placing inside sub-frame)
+        # We can just leave it clean or add a sub-frame if needed. For now simple welcome text is clean.
 
         # Clock & Date Panel
         self.clock_frame = ctk.CTkFrame(self.header_frame, fg_color="transparent")
@@ -127,15 +136,15 @@ class ReceptionistDashboard(ctk.CTk):
             self.clock_frame,
             text=datetime.now().strftime("%A, %d %B %Y"),
             font=("Arial", 12, "bold"),
-            text_color="gray"
+            text_color=dashboard_theme.TEXT_SECONDARY
         )
         self.date_lbl.pack()
 
         self.time_lbl = ctk.CTkLabel(
             self.clock_frame,
             text="00:00:00",
-            font=("Arial", 20, "bold"),
-            text_color="#1F6AA5"
+            font=("Arial", 18, "bold"),
+            text_color=dashboard_theme.ACCENT_BLUE
         )
         self.time_lbl.pack()
 
@@ -145,7 +154,7 @@ class ReceptionistDashboard(ctk.CTk):
         # ==========================================
         # Clickable Stat Cards Row
         # ==========================================
-        self.cards_frame = ctk.CTkFrame(self.scrollable_frame)
+        self.cards_frame = ctk.CTkFrame(self.scrollable_frame, fg_color="transparent")
         self.cards_frame.pack(fill="x", pady=10)
 
         cards_row = ctk.CTkFrame(self.cards_frame, fg_color="transparent")
@@ -180,10 +189,16 @@ class ReceptionistDashboard(ctk.CTk):
         # ==========================================
         # Quick Actions Section
         # ==========================================
-        self.actions_frame = ctk.CTkFrame(self.scrollable_frame)
+        self.actions_frame = ctk.CTkFrame(
+            self.scrollable_frame,
+            fg_color="#FFFFFF",
+            border_color=dashboard_theme.BORDER_COLOR,
+            border_width=1,
+            corner_radius=12
+        )
         self.actions_frame.pack(fill="x", pady=10)
 
-        ctk.CTkLabel(self.actions_frame, text="⚡ Quick Action Center", font=("Arial", 16, "bold")).pack(pady=10)
+        ctk.CTkLabel(self.actions_frame, text="⚡ Quick Action Center", font=("Arial", 16, "bold"), text_color=dashboard_theme.TEXT_PRIMARY).pack(pady=10)
 
         actions_row = ctk.CTkFrame(self.actions_frame, fg_color="transparent")
         actions_row.pack(fill="x", padx=10, pady=10)
@@ -355,56 +370,36 @@ class ReceptionistDashboard(ctk.CTk):
     # ==========================================
 
     def create_stat_card(self, parent, icon, title, value, color, command=None):
-        """Create a clickable statistics card with accent colors."""
-        card = ctk.CTkFrame(parent, corner_radius=10)
-        accent_bar = ctk.CTkFrame(card, width=5, corner_radius=2, fg_color=color)
-        accent_bar.pack(side="left", fill="y", padx=(10, 5), pady=10)
-
-        content_frame = ctk.CTkFrame(card, fg_color="transparent")
-        content_frame.pack(side="left", fill="both", expand=True, padx=5, pady=5)
-
-        header_frame = ctk.CTkFrame(content_frame, fg_color="transparent")
-        header_frame.pack(fill="x", pady=(5, 2))
-
-        icon_label = ctk.CTkLabel(header_frame, text=icon, font=("Arial", 18))
-        icon_label.pack(side="left")
-
-        title_label = ctk.CTkLabel(header_frame, text=f"  {title}", font=("Arial", 11, "bold"), text_color=("#4A5568", "#CBD5E0"))
-        title_label.pack(side="left")
-
-        value_label = ctk.CTkLabel(content_frame, text=value, font=("Arial", 22, "bold"), text_color="#1F6AA5", anchor="w")
-        value_label.pack(fill="x", pady=(2, 5))
-
-        card.value_label = value_label
-
-        if command:
-            card.configure(cursor="hand2")
-            card.bind("<Button-1>", lambda e: command())
-            accent_bar.bind("<Button-1>", lambda e: command())
-            content_frame.bind("<Button-1>", lambda e: command())
-            header_frame.bind("<Button-1>", lambda e: command())
-            icon_label.bind("<Button-1>", lambda e: command())
-            title_label.bind("<Button-1>", lambda e: command())
-            value_label.bind("<Button-1>", lambda e: command())
-
-        return card
+        """Create a modern clickable statistics card."""
+        return dashboard_theme.create_modern_stat_card(parent, icon, title, value, color, command)
 
     def create_table_frame(self, parent, title, columns, height=6):
         """Standard styled Treeview table container frame."""
-        frame = ctk.CTkFrame(parent)
-        ctk.CTkLabel(frame, text=title, font=("Arial", 14, "bold"), text_color="#1F6AA5").pack(pady=5, anchor="w", padx=15)
+        frame = ctk.CTkFrame(parent, fg_color="#FFFFFF", border_color=dashboard_theme.BORDER_COLOR, border_width=1, corner_radius=12)
+        
+        header_frame = ctk.CTkFrame(frame, fg_color="transparent")
+        header_frame.pack(fill="x", padx=15, pady=(10, 5))
+        
+        ctk.CTkLabel(header_frame, text=title, font=("Arial", 14, "bold"), text_color=dashboard_theme.TEXT_PRIMARY).pack(side="left")
 
         style = ttk.Style()
         style.theme_use("clam")
         style.configure(
             "Treeview",
-            background="#2b2b2b",
-            foreground="white",
-            fieldbackground="#2b2b2b",
-            rowheight=30,
+            background="#FFFFFF",
+            foreground="#1E293B",
+            fieldbackground="#FFFFFF",
+            rowheight=35,
             font=("Arial", 11)
         )
-        style.map("Treeview", background=[("selected", "#1F6AA5")], foreground=[("selected", "white")])
+        style.configure(
+            "Treeview.Heading",
+            background="#F1F5F9",
+            foreground="#475569",
+            font=("Arial", 11, "bold"),
+            relief="flat"
+        )
+        style.map("Treeview", background=[("selected", "#E2E8F0")], foreground=[("selected", "#0F172A")])
 
         table = ttk.Treeview(frame, columns=columns, show="headings", height=height)
         for col in columns:
@@ -419,8 +414,8 @@ class ReceptionistDashboard(ctk.CTk):
         v_scroll = ttk.Scrollbar(frame, orient="vertical", command=table.yview)
         table.configure(yscrollcommand=v_scroll.set)
 
-        table.pack(side="left", fill="both", expand=True, padx=(15, 0), pady=5)
-        v_scroll.pack(side="right", fill="y", pady=5, padx=(0, 15))
+        table.pack(side="left", fill="both", expand=True, padx=(15, 0), pady=(0, 15))
+        v_scroll.pack(side="right", fill="y", pady=(0, 15), padx=(0, 15))
 
         frame.table = table
         return frame

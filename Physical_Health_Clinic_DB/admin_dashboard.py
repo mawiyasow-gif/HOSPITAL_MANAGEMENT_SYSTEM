@@ -18,8 +18,10 @@ except ImportError:
 # -----------------------------
 # CustomTkinter Settings
 # -----------------------------
-ctk.set_appearance_mode("Light")
-ctk.set_default_color_theme("blue")
+import dashboard_theme
+
+# Set appearance mode and color theme
+dashboard_theme.apply_global_theme()
 
 
 class AdminDashboard(ctk.CTk):
@@ -38,7 +40,7 @@ class AdminDashboard(ctk.CTk):
         # ==============================
         # Main Container
         # ==============================
-        self.main_container = ctk.CTkFrame(self)
+        self.main_container = ctk.CTkFrame(self, fg_color=dashboard_theme.BG_COLOR)
         self.main_container.pack(fill="both", expand=True)
 
         # ==============================
@@ -47,13 +49,14 @@ class AdminDashboard(ctk.CTk):
         self.sidebar = ctk.CTkFrame(self.main_container, width=250, corner_radius=0)
         self.sidebar.pack(side="left", fill="y")
         self.sidebar.pack_propagate(False)
+        dashboard_theme.style_sidebar(self.sidebar)
 
         # Sidebar Title
         sidebar_title = ctk.CTkLabel(
             self.sidebar,
             text="🏥 ADMIN PANEL",
-            font=("Arial", 20, "bold"),
-            text_color="#1F6AA5"
+            font=("Arial", 18, "bold"),
+            text_color=dashboard_theme.TEXT_PRIMARY
         )
         sidebar_title.pack(pady=30)
 
@@ -75,14 +78,12 @@ class AdminDashboard(ctk.CTk):
         ]
 
         for item, command in menu_items:
-            button = ctk.CTkButton(
+            is_active = (item == "🏠 Dashboard")
+            button = dashboard_theme.create_sidebar_button(
                 self.sidebar,
                 text=item,
-                width=230,
-                height=38,
-                font=("Arial", 13),
-                anchor="w",
-                command=lambda cmd=command: getattr(self, cmd)()
+                command=lambda cmd=command: getattr(self, cmd)(),
+                active=is_active
             )
             button.pack(pady=4, padx=10)
 
@@ -90,11 +91,11 @@ class AdminDashboard(ctk.CTk):
         logout_button = ctk.CTkButton(
             self.sidebar,
             text="🚪 Logout",
-            width=230,
-            height=38,
+            width=210,
+            height=40,
             font=("Arial", 13, "bold"),
             anchor="w",
-            fg_color="#D32F2F",
+            fg_color=dashboard_theme.ACCENT_RED,
             hover_color="#B71C1C",
             command=self.logout
         )
@@ -103,22 +104,29 @@ class AdminDashboard(ctk.CTk):
         # ==============================
         # Main Content Area
         # ==============================
-        self.content_area = ctk.CTkFrame(self.main_container)
+        self.content_area = ctk.CTkFrame(self.main_container, fg_color=dashboard_theme.BG_COLOR)
         self.content_area.pack(side="right", fill="both", expand=True)
 
         # ==============================
         # Top Header
         # ==============================
-        self.header = ctk.CTkFrame(self.content_area, height=80)
+        self.header = ctk.CTkFrame(
+            self.content_area,
+            height=80,
+            fg_color="#FFFFFF",
+            border_color=dashboard_theme.BORDER_COLOR,
+            border_width=1,
+            corner_radius=12
+        )
         self.header.pack(fill="x", padx=20, pady=10)
         self.header.pack_propagate(False)
 
         # System Name
         system_name = ctk.CTkLabel(
             self.header,
-            text="PHYSICAL HEALTH CLINIC RECORD SYSTEM",
+            text="PHANCIAL HEALTH CLINIC SYSTEM",
             font=("Arial", 18, "bold"),
-            text_color="#1F6AA5"
+            text_color=dashboard_theme.TEXT_PRIMARY
         )
         system_name.pack(side="left", padx=20)
 
@@ -135,16 +143,17 @@ class AdminDashboard(ctk.CTk):
         self.clock_label = ctk.CTkLabel(
             self.header,
             text="",
-            font=("Arial", 16),
-            text_color="#1F6AA5"
+            font=("Arial", 18, "bold"),
+            text_color=dashboard_theme.ACCENT_BLUE
         )
         self.clock_label.pack(side="right", padx=20)
 
         # User Info
         user_info = ctk.CTkLabel(
             self.header,
-            text=f"👤 {self.admin_user['full_name']} ({self.admin_user['role']})",
-            font=("Arial", 14)
+            text=f"Welcome, {self.admin_user['full_name']}! 👋",
+            font=("Arial", 14, "bold"),
+            text_color=dashboard_theme.TEXT_PRIMARY
         )
         user_info.pack(side="right", padx=20)
 
@@ -152,20 +161,21 @@ class AdminDashboard(ctk.CTk):
         self.date_label = ctk.CTkLabel(
             self.header,
             text="",
-            font=("Arial", 12)
+            font=("Arial", 12, "bold"),
+            text_color=dashboard_theme.TEXT_SECONDARY
         )
         self.date_label.pack(side="right", padx=10)
 
         # ==============================
         # Scrollable Content
         # ==============================
-        self.scrollable_frame = ctk.CTkScrollableFrame(self.content_area)
+        self.scrollable_frame = ctk.CTkScrollableFrame(self.content_area, fg_color=dashboard_theme.BG_COLOR)
         self.scrollable_frame.pack(fill="both", expand=True, padx=20, pady=10)
 
         # ==============================
         # Dashboard Cards
         # ==============================
-        self.cards_frame = ctk.CTkFrame(self.scrollable_frame)
+        self.cards_frame = ctk.CTkFrame(self.scrollable_frame, fg_color="transparent")
         self.cards_frame.pack(fill="x", pady=10)
 
         cards_row1 = ctk.CTkFrame(self.cards_frame, fg_color="transparent")
@@ -443,50 +453,38 @@ class AdminDashboard(ctk.CTk):
     # ==============================
 
     def create_stat_card(self, parent, icon, title, value, color, command=None):
-        """Create a statistics card with a clean left accent bar to look professional."""
-        card = ctk.CTkFrame(parent, corner_radius=10)
-        
-        # Left accent color bar
-        accent_bar = ctk.CTkFrame(card, width=5, corner_radius=2, fg_color=color)
-        accent_bar.pack(side="left", fill="y", padx=(10, 5), pady=10)
-        
-        # Content frame to hold details
-        content_frame = ctk.CTkFrame(card, fg_color="transparent")
-        content_frame.pack(side="left", fill="both", expand=True, padx=5, pady=5)
-        
-        # Layout metrics inside content frame
-        header_frame = ctk.CTkFrame(content_frame, fg_color="transparent")
-        header_frame.pack(fill="x", pady=(5, 2))
-        
-        icon_label = ctk.CTkLabel(header_frame, text=icon, font=("Arial", 18))
-        icon_label.pack(side="left")
-        
-        title_label = ctk.CTkLabel(header_frame, text=f"  {title}", font=("Arial", 11, "bold"), text_color=("#4A5568", "#CBD5E0"))
-        title_label.pack(side="left")
-        
-        value_label = ctk.CTkLabel(content_frame, text=value, font=("Arial", 22, "bold"), text_color="#1F6AA5", anchor="w")
-        value_label.pack(fill="x", pady=(2, 5))
-        
-        card.value_label = value_label
-
-        if command:
-            card.configure(cursor="hand2")
-            card.bind("<Button-1>", lambda e: command())
-            accent_bar.bind("<Button-1>", lambda e: command())
-            content_frame.bind("<Button-1>", lambda e: command())
-            header_frame.bind("<Button-1>", lambda e: command())
-            icon_label.bind("<Button-1>", lambda e: command())
-            title_label.bind("<Button-1>", lambda e: command())
-            value_label.bind("<Button-1>", lambda e: command())
-
-        return card
+        """Create a modern clickable statistics card."""
+        return dashboard_theme.create_modern_stat_card(parent, icon, title, value, color, command)
 
     def create_recent_table_frame(self, parent, title):
         """Create a frame for recent activities table."""
-        frame = ctk.CTkFrame(parent)
+        frame = ctk.CTkFrame(parent, fg_color="#FFFFFF", border_color=dashboard_theme.BORDER_COLOR, border_width=1, corner_radius=12)
         
-        ctk.CTkLabel(frame, text=title, font=("Arial", 14, "bold")).pack(pady=5)
+        header_frame = ctk.CTkFrame(frame, fg_color="transparent")
+        header_frame.pack(fill="x", padx=15, pady=(10, 5))
         
+        ctk.CTkLabel(header_frame, text=title, font=("Arial", 14, "bold"), text_color=dashboard_theme.TEXT_PRIMARY).pack(side="left")
+        
+        # Style
+        style = ttk.Style()
+        style.theme_use("clam")
+        style.configure(
+            "Treeview",
+            background="#FFFFFF",
+            foreground="#1E293B",
+            fieldbackground="#FFFFFF",
+            rowheight=35,
+            font=("Arial", 11)
+        )
+        style.configure(
+            "Treeview.Heading",
+            background="#F1F5F9",
+            foreground="#475569",
+            font=("Arial", 11, "bold"),
+            relief="flat"
+        )
+        style.map("Treeview", background=[("selected", "#E2E8F0")], foreground=[("selected", "#0F172A")])
+
         # Treeview for recent items
         columns = ("Name", "Date")
         table = ttk.Treeview(frame, columns=columns, show="headings", height=8)
@@ -494,17 +492,40 @@ class AdminDashboard(ctk.CTk):
         table.heading("Date", text="Date")
         table.column("Name", width=150)
         table.column("Date", width=100)
-        table.pack(padx=5, pady=5, fill="both", expand=True)
+        table.pack(padx=15, pady=(0, 15), fill="both", expand=True)
         
         frame.table = table
         return frame
 
     def create_alert_frame(self, parent, title):
         """Create a frame for alerts."""
-        frame = ctk.CTkFrame(parent)
+        frame = ctk.CTkFrame(parent, fg_color="#FFFFFF", border_color=dashboard_theme.BORDER_COLOR, border_width=1, corner_radius=12)
         
-        ctk.CTkLabel(frame, text=title, font=("Arial", 14, "bold")).pack(pady=5)
+        header_frame = ctk.CTkFrame(frame, fg_color="transparent")
+        header_frame.pack(fill="x", padx=15, pady=(10, 5))
         
+        ctk.CTkLabel(header_frame, text=title, font=("Arial", 14, "bold"), text_color=dashboard_theme.TEXT_PRIMARY).pack(side="left")
+        
+        # Style
+        style = ttk.Style()
+        style.theme_use("clam")
+        style.configure(
+            "Treeview",
+            background="#FFFFFF",
+            foreground="#1E293B",
+            fieldbackground="#FFFFFF",
+            rowheight=35,
+            font=("Arial", 11)
+        )
+        style.configure(
+            "Treeview.Heading",
+            background="#F1F5F9",
+            foreground="#475569",
+            font=("Arial", 11, "bold"),
+            relief="flat"
+        )
+        style.map("Treeview", background=[("selected", "#E2E8F0")], foreground=[("selected", "#0F172A")])
+
         # Treeview for alerts
         columns = ("Item", "Details")
         table = ttk.Treeview(frame, columns=columns, show="headings", height=6)
@@ -512,7 +533,7 @@ class AdminDashboard(ctk.CTk):
         table.heading("Details", text="Details")
         table.column("Item", width=120)
         table.column("Details", width=150)
-        table.pack(padx=5, pady=5, fill="both", expand=True)
+        table.pack(padx=15, pady=(0, 15), fill="both", expand=True)
         
         frame.table = table
         return frame

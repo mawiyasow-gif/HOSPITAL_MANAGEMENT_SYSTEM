@@ -4,8 +4,10 @@ import mysql.connector
 import hashlib
 from database import connect_db
 
-ctk.set_appearance_mode("light")
-ctk.set_default_color_theme("blue")
+import dashboard_theme
+
+# Set appearance mode and color theme
+dashboard_theme.apply_global_theme()
 
 
 class LoginApp(ctk.CTk):
@@ -17,34 +19,52 @@ class LoginApp(ctk.CTk):
         self.geometry("700x500")
         self.resizable(False, False)
 
-        title = ctk.CTkLabel(
+        self.configure(fg_color=dashboard_theme.BG_COLOR)
+
+        card = ctk.CTkFrame(
             self,
-            text="Physical Health Clinic Record System",
-            font=("Arial", 24, "bold")
+            fg_color="#FFFFFF",
+            border_color=dashboard_theme.BORDER_COLOR,
+            border_width=1,
+            corner_radius=15,
+            width=450,
+            height=400
         )
-        title.pack(pady=30)
+        card.place(relx=0.5, rely=0.5, anchor="center")
+        card.pack_propagate(False)
+
+        title = ctk.CTkLabel(
+            card,
+            text="Physical Health Clinic System",
+            font=("Arial", 20, "bold"),
+            text_color=dashboard_theme.TEXT_PRIMARY
+        )
+        title.pack(pady=(25, 5))
 
         subtitle = ctk.CTkLabel(
-            self,
-            text="Login",
-            font=("Arial", 18)
+            card,
+            text="Sign in to your workspace",
+            font=("Arial", 13, "bold"),
+            text_color=dashboard_theme.TEXT_SECONDARY
         )
-        subtitle.pack(pady=10)
+        subtitle.pack(pady=(0, 20))
 
         self.username = ctk.CTkEntry(
-            self,
-            width=300,
+            card,
+            width=320,
+            height=40,
             placeholder_text="Username"
         )
         self.username.pack(pady=10)
 
         # Password layout frame to keep the toggle button inline
-        password_frame = ctk.CTkFrame(self, fg_color="transparent")
+        password_frame = ctk.CTkFrame(card, fg_color="transparent")
         password_frame.pack(pady=10)
 
         self.password = ctk.CTkEntry(
             password_frame,
-            width=255,
+            width=275,
+            height=40,
             placeholder_text="Password",
             show="*"
         )
@@ -55,7 +75,7 @@ class LoginApp(ctk.CTk):
             password_frame,
             text="👁️",
             width=40,
-            height=28,
+            height=40,
             font=("Arial", 14),
             fg_color="transparent",
             text_color="gray",
@@ -65,18 +85,24 @@ class LoginApp(ctk.CTk):
         self.toggle_btn.pack(side="left", padx=(5, 0))
 
         login_btn = ctk.CTkButton(
-            self,
+            card,
             text="Login",
-            width=300,
+            width=320,
+            height=40,
+            fg_color=dashboard_theme.ACCENT_BLUE,
+            hover_color=dashboard_theme.ACCENT_BLUE_HOVER,
             command=self.login
         )
-        login_btn.pack(pady=20)
+        login_btn.pack(pady=(20, 10))
 
         exit_btn = ctk.CTkButton(
-            self,
-            text="Exit",
-            width=300,
-            fg_color="red",
+            card,
+            text="Exit System",
+            width=320,
+            height=35,
+            fg_color="transparent",
+            text_color=dashboard_theme.ACCENT_RED,
+            hover_color="#FEE2E2",
             command=self.destroy
         )
         exit_btn.pack()
@@ -88,7 +114,7 @@ class LoginApp(ctk.CTk):
             self.password_visible = False
         else:
             self.password.configure(show="")
-            self.toggle_btn.configure(text_color="#1F6AA5")
+            self.toggle_btn.configure(text_color=dashboard_theme.ACCENT_BLUE)
             self.password_visible = True
 
     def login(self):

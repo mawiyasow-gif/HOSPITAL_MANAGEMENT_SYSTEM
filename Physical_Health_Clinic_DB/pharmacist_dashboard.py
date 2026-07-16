@@ -4,8 +4,10 @@ from datetime import datetime
 from database import connect_db
 import os
 
-ctk.set_appearance_mode("Light")
-ctk.set_default_color_theme("blue")
+import dashboard_theme
+
+# Set appearance mode and color theme
+dashboard_theme.apply_global_theme()
 
 class PharmacistDashboard(ctk.CTk):
     """Pharmacist Dashboard for the Physical Health Clinic Record System."""
@@ -26,19 +28,20 @@ class PharmacistDashboard(ctk.CTk):
         self.pharmacist_worker_id = self.pharmacist_user.get("worker_id", 5)
 
         # Main container
-        self.main_container = ctk.CTkFrame(self)
+        self.main_container = ctk.CTkFrame(self, fg_color=dashboard_theme.BG_COLOR)
         self.main_container.pack(fill="both", expand=True)
 
         # Left Sidebar (Navigation)
         self.sidebar = ctk.CTkFrame(self.main_container, width=250, corner_radius=0)
         self.sidebar.pack(side="left", fill="y")
         self.sidebar.pack_propagate(False)
+        dashboard_theme.style_sidebar(self.sidebar)
 
         sidebar_title = ctk.CTkLabel(
             self.sidebar,
             text="🏥 PHARMACY PANEL",
-            font=("Arial", 20, "bold"),
-            text_color="#1F6AA5"
+            font=("Arial", 18, "bold"),
+            text_color=dashboard_theme.TEXT_PRIMARY
         )
         sidebar_title.pack(pady=30)
 
@@ -56,38 +59,42 @@ class PharmacistDashboard(ctk.CTk):
                     self.sidebar,
                     text=text,
                     width=210,
-                    height=45,
-                    font=("Arial", 15, "bold"),
+                    height=40,
+                    font=("Arial", 13, "bold"),
                     anchor="w",
-                    fg_color="#D32F2F",
+                    fg_color=dashboard_theme.ACCENT_RED,
                     hover_color="#B71C1C",
                     command=command
                 )
                 btn.pack(side="bottom", pady=20)
             else:
-                btn = ctk.CTkButton(
+                is_active = (text == "🏠 Dashboard")
+                btn = dashboard_theme.create_sidebar_button(
                     self.sidebar,
                     text=text,
-                    width=210,
-                    height=45,
-                    font=("Arial", 15, "bold"),
-                    anchor="w",
-                    command=command
+                    command=command,
+                    active=is_active
                 )
                 btn.pack(pady=6)
 
         # Right View Area
-        self.content_frame = ctk.CTkFrame(self.main_container, corner_radius=0)
+        self.content_frame = ctk.CTkFrame(self.main_container, corner_radius=0, fg_color=dashboard_theme.BG_COLOR)
         self.content_frame.pack(side="right", fill="both", expand=True)
 
-        self.scrollable_frame = ctk.CTkScrollableFrame(self.content_frame, corner_radius=0)
+        self.scrollable_frame = ctk.CTkScrollableFrame(self.content_frame, corner_radius=0, fg_color=dashboard_theme.BG_COLOR)
         self.scrollable_frame.pack(fill="both", expand=True, padx=10, pady=10)
 
         # Header Info Bar
-        self.header_frame = ctk.CTkFrame(self.scrollable_frame)
+        self.header_frame = ctk.CTkFrame(
+            self.scrollable_frame,
+            fg_color="#FFFFFF",
+            border_color=dashboard_theme.BORDER_COLOR,
+            border_width=1,
+            corner_radius=12
+        )
         self.header_frame.pack(fill="x", pady=(0, 10))
 
-        welcome_text = f"👋 Welcome Pharmacist, {self.pharmacist_user['full_name']}"
+        welcome_text = f"Welcome back, Pharmacist! 👋"
         self.welcome_lbl = ctk.CTkLabel(
             self.header_frame,
             text=welcome_text,
@@ -104,15 +111,15 @@ class PharmacistDashboard(ctk.CTk):
             self.clock_frame,
             text=datetime.now().strftime("%A, %d %B %Y"),
             font=("Arial", 12, "bold"),
-            text_color="gray"
+            text_color=dashboard_theme.TEXT_SECONDARY
         )
         self.date_lbl.pack()
 
         self.time_lbl = ctk.CTkLabel(
             self.clock_frame,
             text="00:00:00",
-            font=("Arial", 20, "bold"),
-            text_color="#1F6AA5"
+            font=("Arial", 18, "bold"),
+            text_color=dashboard_theme.ACCENT_BLUE
         )
         self.time_lbl.pack()
 
@@ -146,16 +153,36 @@ class PharmacistDashboard(ctk.CTk):
         self.prescriptions_card.pack(side="left", padx=5, expand=True, fill="x")
 
         # Table showing Active Stock
-        self.stock_frame = ctk.CTkFrame(self.scrollable_frame)
+        self.stock_frame = ctk.CTkFrame(self.scrollable_frame, fg_color="#FFFFFF", border_color=dashboard_theme.BORDER_COLOR, border_width=1, corner_radius=12)
         self.stock_frame.pack(fill="both", expand=True, pady=15)
 
-        ctk.CTkLabel(self.stock_frame, text="📋 Current Pharmaceutical Stock Status", font=("Arial", 16, "bold"), text_color="#1F6AA5").pack(anchor="w", padx=20, pady=10)
+        ctk.CTkLabel(self.stock_frame, text="📋 Current Pharmaceutical Stock Status", font=("Arial", 16, "bold"), text_color=dashboard_theme.TEXT_PRIMARY).pack(anchor="w", padx=20, pady=10)
 
         container = ctk.CTkFrame(self.stock_frame, fg_color="transparent")
-        container.pack(fill="both", expand=True, padx=20, pady=10)
+        container.pack(fill="both", expand=True, padx=20, pady=(0, 15))
 
         scrollbar = ttk.Scrollbar(container)
         scrollbar.pack(side="right", fill="y")
+
+        # Styling
+        style = ttk.Style()
+        style.theme_use("clam")
+        style.configure(
+            "Treeview",
+            background="#FFFFFF",
+            foreground="#1E293B",
+            fieldbackground="#FFFFFF",
+            rowheight=35,
+            font=("Arial", 11)
+        )
+        style.configure(
+            "Treeview.Heading",
+            background="#F1F5F9",
+            foreground="#475569",
+            font=("Arial", 11, "bold"),
+            relief="flat"
+        )
+        style.map("Treeview", background=[("selected", "#E2E8F0")], foreground=[("selected", "#0F172A")])
 
         columns = ("Medicine Name", "Batch Number", "Quantity In Stock", "Selling Price", "Expiry Date", "Supplier")
         self.stock_table = ttk.Treeview(container, columns=columns, show="headings", yscrollcommand=scrollbar.set, height=12)
@@ -172,32 +199,8 @@ class PharmacistDashboard(ctk.CTk):
         self.after(1000, self.update_clock)
 
     def create_stat_card(self, parent, icon, title, value, color, command=None):
-        card = ctk.CTkFrame(parent, corner_radius=10, cursor="hand2" if command else None)
-        accent_bar = ctk.CTkFrame(card, width=5, corner_radius=2, fg_color=color)
-        accent_bar.pack(side="left", fill="y", padx=(10, 5), pady=10)
-
-        content_frame = ctk.CTkFrame(card, fg_color="transparent")
-        content_frame.pack(side="left", fill="both", expand=True, padx=5, pady=5)
-
-        header_frame = ctk.CTkFrame(content_frame, fg_color="transparent")
-        header_frame.pack(fill="x", pady=(5, 2))
-
-        icon_label = ctk.CTkLabel(header_frame, text=icon, font=("Arial", 18))
-        icon_label.pack(side="left")
-
-        title_label = ctk.CTkLabel(header_frame, text=f"  {title}", font=("Arial", 11, "bold"), text_color=("#4A5568", "#CBD5E0"))
-        title_label.pack(side="left")
-
-        value_label = ctk.CTkLabel(content_frame, text=value, font=("Arial", 20, "bold"), text_color="#1F6AA5")
-        value_label.pack(anchor="w", padx=5, pady=(2, 5))
-
-        if command:
-            card.bind("<Button-1>", lambda e: command())
-            icon_label.bind("<Button-1>", lambda e: command())
-            title_label.bind("<Button-1>", lambda e: command())
-            value_label.bind("<Button-1>", lambda e: command())
-            
-        card.value_label = value_label
+        """Create a modern clickable statistics card."""
+        return dashboard_theme.create_modern_stat_card(parent, icon, title, value, color, command)
         return card
 
     def refresh_dashboard(self):
@@ -297,7 +300,7 @@ class MedicineDispensingWindow(ctk.CTkToplevel):
             self.table_frame,
             text="Pending Prescriptions Queue",
             font=("Arial", 14, "bold"),
-            text_color="#1F6AA5"
+            text_color=dashboard_theme.TEXT_PRIMARY
         ).pack(anchor="w", padx=10, pady=5)
 
         columns = ("Prescription ID", "Patient Name", "Prescribed Medicine", "Dosage", "Qty", "Doctor", "Date")
@@ -305,7 +308,23 @@ class MedicineDispensingWindow(ctk.CTkToplevel):
         
         # Style
         style = ttk.Style()
-        style.configure("Treeview", font=("Arial", 11), rowheight=28)
+        style.theme_use("clam")
+        style.configure(
+            "Treeview",
+            background="#FFFFFF",
+            foreground="#1E293B",
+            fieldbackground="#FFFFFF",
+            rowheight=35,
+            font=("Arial", 11)
+        )
+        style.configure(
+            "Treeview.Heading",
+            background="#F1F5F9",
+            foreground="#475569",
+            font=("Arial", 11, "bold"),
+            relief="flat"
+        )
+        style.map("Treeview", background=[("selected", "#E2E8F0")], foreground=[("selected", "#0F172A")])
 
         for col in columns:
             self.table.heading(col, text=col, anchor="center")
