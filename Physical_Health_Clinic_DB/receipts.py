@@ -355,7 +355,7 @@ class ReceiptWindow(ctk.CTkToplevel):
                         p.Amount,
                         p.PaymentDate,
                         p.PaymentMethod
-                    FROM Payments p
+                    FROM Payment p
                     LEFT JOIN Patients pat ON p.PatientID = pat.PatientID
                     WHERE p.PaymentID = %s
                 """
@@ -401,7 +401,7 @@ class ReceiptWindow(ctk.CTkToplevel):
                     p.PaymentID,
                     pat.FullName,
                     p.Amount
-                FROM Payments p
+                FROM Payment p
                 LEFT JOIN Patients pat ON p.PatientID = pat.PatientID
                 ORDER BY p.PaymentID DESC
             """
@@ -436,7 +436,7 @@ class ReceiptWindow(ctk.CTkToplevel):
                     r.IssueDate,
                     r.TotalAmount
                 FROM Receipt r
-                LEFT JOIN Payments p ON r.PaymentID = p.PaymentID
+                LEFT JOIN Payment p ON r.PaymentID = p.PaymentID
                 LEFT JOIN Patients pat ON p.PatientID = pat.PatientID
                 ORDER BY r.ReceiptID DESC
             """
@@ -655,7 +655,7 @@ class ReceiptWindow(ctk.CTkToplevel):
                     r.IssueDate,
                     r.TotalAmount
                 FROM Receipt r
-                LEFT JOIN Payments p ON r.PaymentID = p.PaymentID
+                LEFT JOIN Payment p ON r.PaymentID = p.PaymentID
                 LEFT JOIN Patients pat ON p.PatientID = pat.PatientID
                 WHERE r.ReceiptID LIKE %s
                    OR r.PaymentID LIKE %s

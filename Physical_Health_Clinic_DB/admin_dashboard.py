@@ -594,17 +594,17 @@ class AdminDashboard(ctk.CTk):
             self.inventory_card.value_label.configure(text=str(inventory_count))
 
             # Total Payments
-            cursor.execute("SELECT COUNT(*) FROM Payments")
+            cursor.execute("SELECT COUNT(*) FROM Payment")
             payments_count = cursor.fetchone()[0]
             self.payments_card.value_label.configure(text=str(payments_count))
 
             # Total Receipts
-            cursor.execute("SELECT COUNT(*) FROM Receipts")
+            cursor.execute("SELECT COUNT(*) FROM Receipt")
             receipts_count = cursor.fetchone()[0]
             self.receipts_card.value_label.configure(text=str(receipts_count))
 
             # Total Revenue
-            cursor.execute("SELECT SUM(Amount) FROM Payments")
+            cursor.execute("SELECT SUM(Amount) FROM Payment")
             total_revenue = cursor.fetchone()[0] or 0
             self.revenue_card.value_label.configure(text=f"Le {total_revenue:,.2f}")
 
@@ -645,7 +645,7 @@ class AdminDashboard(ctk.CTk):
             cursor = conn.cursor()
             cursor.execute("""
                 SELECT p.Amount, p.PaymentDate, pat.FullName
-                FROM Payments p
+                FROM Payment p
                 LEFT JOIN Patients pat ON p.PatientID = pat.PatientID
                 ORDER BY p.PaymentID DESC LIMIT 10
             """)
@@ -754,22 +754,22 @@ class AdminDashboard(ctk.CTk):
             cursor = conn.cursor()
 
             # Today's Revenue
-            cursor.execute("SELECT SUM(Amount) FROM Payments WHERE DATE(PaymentDate) = CURDATE()")
+            cursor.execute("SELECT SUM(Amount) FROM Payment WHERE DATE(PaymentDate) = CURDATE()")
             today_revenue = cursor.fetchone()[0] or 0
             self.today_revenue_card.value_label.configure(text=f"Le {today_revenue:,.2f}")
 
             # This Week's Revenue
-            cursor.execute("SELECT SUM(Amount) FROM Payments WHERE YEARWEEK(PaymentDate, 1) = YEARWEEK(CURDATE(), 1)")
+            cursor.execute("SELECT SUM(Amount) FROM Payment WHERE YEARWEEK(PaymentDate, 1) = YEARWEEK(CURDATE(), 1)")
             week_revenue = cursor.fetchone()[0] or 0
             self.week_revenue_card.value_label.configure(text=f"Le {week_revenue:,.2f}")
 
             # This Month's Revenue
-            cursor.execute("SELECT SUM(Amount) FROM Payments WHERE MONTH(PaymentDate) = MONTH(CURDATE()) AND YEAR(PaymentDate) = YEAR(CURDATE())")
+            cursor.execute("SELECT SUM(Amount) FROM Payment WHERE MONTH(PaymentDate) = MONTH(CURDATE()) AND YEAR(PaymentDate) = YEAR(CURDATE())")
             month_revenue = cursor.fetchone()[0] or 0
             self.month_revenue_card.value_label.configure(text=f"Le {month_revenue:,.2f}")
 
             # Total Revenue
-            cursor.execute("SELECT SUM(Amount) FROM Payments")
+            cursor.execute("SELECT SUM(Amount) FROM Payment")
             total_revenue = cursor.fetchone()[0] or 0
             self.total_revenue_card.value_label.configure(text=f"Le {total_revenue:,.2f}")
 
@@ -840,7 +840,7 @@ class AdminDashboard(ctk.CTk):
             # Monthly Revenue Chart
             cursor.execute("""
                 SELECT MONTH(PaymentDate) as month, SUM(Amount) as total
-                FROM Payments
+                FROM Payment
                 WHERE YEAR(PaymentDate) = YEAR(CURDATE())
                 GROUP BY MONTH(PaymentDate)
                 ORDER BY month
