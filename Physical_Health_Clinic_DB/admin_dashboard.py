@@ -690,7 +690,7 @@ class AdminDashboard(ctk.CTk):
             conn = connect_db()
             cursor = conn.cursor()
             cursor.execute("""
-                SELECT d.Description, d.DiagnosisDate, pat.FullName
+                SELECT d.DiagnosisDetails, d.DiagnosisDate, pat.FullName
                 FROM Diagnosis d
                 LEFT JOIN Patients pat ON d.PatientID = pat.PatientID
                 ORDER BY d.DiagnosisID DESC LIMIT 10

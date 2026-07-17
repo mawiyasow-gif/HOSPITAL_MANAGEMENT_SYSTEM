@@ -150,8 +150,7 @@ class InventoryWindow(ctk.CTkToplevel):
         
         # Table Styling
         style = ttk.Style()
-        style.configure("Treeview", font=("Arial", 11), rowheight=28)
-        style.heading("ID", text="ID", anchor="center")
+        self.table.heading("ID", text="ID", anchor="center")
         self.table.column("ID", width=40, anchor="center")
         
         for col in columns[1:]:

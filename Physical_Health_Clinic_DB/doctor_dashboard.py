@@ -817,9 +817,9 @@ class MedicalHistoryWindow(ctk.CTkToplevel):
 
             # Diagnoses
             cursor.execute("""
-                SELECT d.DiagnosisID, d.DiagnosisDate, d.Description, w.FullName
+                SELECT d.DiagnosisID, d.DiagnosisDate, d.DiagnosisDetails, w.FullName
                 FROM Diagnosis d
-                LEFT JOIN Health_Workers w ON d.WorkerID = w.WorkerID
+                LEFT JOIN Health_Workers w ON d.DoctorID = w.WorkerID
                 WHERE d.PatientID = %s
                 ORDER BY d.DiagnosisDate DESC
             """, (p_id,))
