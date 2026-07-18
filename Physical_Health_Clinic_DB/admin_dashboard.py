@@ -72,6 +72,7 @@ class AdminDashboard(ctk.CTk):
             ("💳 Payment", "open_payment"),
             ("🧾 Receipt", "open_receipt"),
             ("📊 Reports", "open_reports"),
+            ("📈 Doctor Monitoring", "open_doctor_monitoring"),
             ("🏥 Services Catalog", "open_services"),
             ("👤 User Management", "open_user_management"),
             ("⚙️ Settings", "open_settings")
@@ -981,6 +982,11 @@ class AdminDashboard(ctk.CTk):
         """Open the Settings module."""
         from settings import SettingsWindow
         SettingsWindow(self)
+
+    def open_doctor_monitoring(self):
+        """Open the Doctor Performance and Monitoring Dashboard."""
+        from doctor_monitoring import DoctorMonitoringWindow
+        DoctorMonitoringWindow(self)
 
     def logout(self):
         """Logout from the administrator dashboard."""

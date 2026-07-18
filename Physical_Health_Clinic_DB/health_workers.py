@@ -235,8 +235,8 @@ class HealthWorkerWindow(ctk.CTkToplevel):
                 username = f"{base_username}{suffix}"
                 suffix += 1
 
-            # Insert into Users first
-            hashed_pass = hashlib.sha256('Password123'.encode('utf-8')).hexdigest()
+            # Use plain text default password
+            hashed_pass = 'Password123'
             user_query = """
                 INSERT INTO Users (FullName, username, Password, Role, Email, Phone, Gender, Status)
                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
@@ -322,7 +322,8 @@ class HealthWorkerWindow(ctk.CTkToplevel):
                     username = f"{base_username}{suffix}"
                     suffix += 1
 
-                hashed_pass = hashlib.sha256('Password123'.encode('utf-8')).hexdigest()
+                # Use plain text default password
+                hashed_pass = 'Password123'
                 cursor.execute("""
                     INSERT INTO Users (FullName, username, Password, Role, Email, Phone, Gender, Status)
                     VALUES (%s, %s, %s, %s, %s, %s, %s, %s)

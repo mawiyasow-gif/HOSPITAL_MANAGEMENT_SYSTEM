@@ -129,8 +129,8 @@ class LoginApp(ctk.CTk):
             conn = connect_db()
             cursor = conn.cursor()
 
-            # Hash the input password using SHA-256
-            hashed_password = hashlib.sha256(password.encode('utf-8')).hexdigest()
+            # Use plain text password directly
+            hashed_password = password
 
             # Query to join Users and Health_Workers to get IDs, FullName, Role, and Status
             query = """

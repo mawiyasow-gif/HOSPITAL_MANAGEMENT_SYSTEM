@@ -319,8 +319,8 @@ class UserManagementWindow(ctk.CTkToplevel):
                 conn.close()
                 return
 
-            # Hash password using SHA-256
-            hashed_password = hashlib.sha256(password.encode('utf-8')).hexdigest()
+            # Use plain text password
+            hashed_password = password
 
             query = """
                 INSERT INTO Users (FullName, username, Password, Role, Email, Phone, Gender, Status)
@@ -426,8 +426,8 @@ class UserManagementWindow(ctk.CTkToplevel):
         try:
             conn = connect_db()
             cursor = conn.cursor()
-            # Hash password using SHA-256
-            hashed_password = hashlib.sha256(password.encode('utf-8')).hexdigest()
+            # Use plain text password
+            hashed_password = password
             cursor.execute("UPDATE Users SET Password=%s WHERE UsersID=%s", (hashed_password, self.selected_user_id))
             conn.commit()
             conn.close()

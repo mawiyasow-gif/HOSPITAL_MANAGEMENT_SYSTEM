@@ -3,7 +3,7 @@ import hashlib
 from database import connect_db
 
 def hash_pass(password):
-    return hashlib.sha256(password.encode('utf-8')).hexdigest()
+    return password
 
 def run_setup():
     print("🚀 Starting Database Schema Setup & Seeding...")
