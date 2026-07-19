@@ -419,24 +419,42 @@ class ReceiptWindow(ctk.CTkToplevel):
             
             # Fetch Payment Type and links
             cursor.execute("""
-                SELECT PaymentType, LabRequestID, DispensingID, ServiceID, Amount 
+                SELECT PaymentType, LabRequestID, DispensingID, ServiceID, Amount, PrescriptionID 
                 FROM Payment 
                 WHERE PaymentID = %s
             """, (payment_id,))
             pay_row = cursor.fetchone()
             
             if pay_row:
-                ptype, lab_req, disp_id, service_id, amount = pay_row
+                ptype, lab_req, disp_id, service_id, amount, prescription_id = pay_row
                 
-                if ptype == "Medicines" and disp_id:
-                    # Query prescribed medicines dispensed in this batch
-                    cursor.execute("""
-                        SELECT pr.MedicineName, md.QuantityDispensed, inv.SellingPrice
-                        FROM Medicine_Dispensing md
-                        JOIN Prescription pr ON md.PrescriptionID = pr.PrescriptionID
-                        JOIN Inventory inv ON md.InventoryID = inv.InventoryID
-                        WHERE md.DispensingID = %s
-                    """, (disp_id,))
+                if ptype == "Medicines":
+                    if prescription_id:
+                        # Query by TreatmentID (PrescriptionID stores TreatmentID in new flow)
+                        cursor.execute("""
+                            SELECT pr.MedicineName, pr.QuantityPrescribed, inv.SellingPrice
+                            FROM Prescription pr
+                            LEFT JOIN Inventory inv ON LOWER(pr.MedicineName) = LOWER(inv.MedicineName)
+                            WHERE pr.TreatmentID = %s
+                        """, (prescription_id,))
+                        for row in cursor.fetchall():
+                            name, qty, sell = row
+                            price = float(sell) if sell else 0.0
+                            items.append({
+                                "description": name,
+                                "qty": qty,
+                                "price": price,
+                                "total": qty * price
+                            })
+                    elif disp_id:
+                        # Fallback to old DispensingID structure
+                        cursor.execute("""
+                            SELECT pr.MedicineName, md.QuantityDispensed, inv.SellingPrice
+                            FROM Medicine_Dispensing md
+                            JOIN Prescription pr ON md.PrescriptionID = pr.PrescriptionID
+                            JOIN Inventory inv ON md.InventoryID = inv.InventoryID
+                            WHERE md.DispensingID = %s
+                        """, (disp_id,))
                     for row in cursor.fetchall():
                         name, qty, sell = row
                         items.append({

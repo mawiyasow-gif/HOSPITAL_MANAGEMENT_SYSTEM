@@ -219,7 +219,7 @@ def run_setup():
                 MedicineName VARCHAR(100) NOT NULL,
                 Dosage VARCHAR(100) NOT NULL,
                 QuantityPrescribed INT NOT NULL,
-                Status ENUM('Pending', 'Dispensed') DEFAULT 'Pending',
+                Status ENUM('Pending', 'Dispensed', 'Paid') DEFAULT 'Pending',
                 DatePrescribed TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (TreatmentID) REFERENCES Treatment(TreatmentID) ON DELETE CASCADE,
                 FOREIGN KEY (PatientID) REFERENCES Patients(PatientID) ON DELETE CASCADE,
@@ -257,11 +257,16 @@ def run_setup():
                 PaymentMethod VARCHAR(50) NOT NULL,
                 PaymentDate TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 BilledBy INT,
+                PrescriptionID INT,
+                PharmacistID INT,
+                PaymentStatus VARCHAR(50) DEFAULT 'Pending',
                 FOREIGN KEY (PatientID) REFERENCES Patients(PatientID) ON DELETE CASCADE,
                 FOREIGN KEY (ServiceID) REFERENCES Hospital_Services(ServiceID) ON DELETE SET NULL,
                 FOREIGN KEY (LabRequestID) REFERENCES Laboratory_Requests(RequestID) ON DELETE SET NULL,
                 FOREIGN KEY (DispensingID) REFERENCES Medicine_Dispensing(DispensingID) ON DELETE SET NULL,
-                FOREIGN KEY (BilledBy) REFERENCES Health_Workers(WorkerID) ON DELETE SET NULL
+                FOREIGN KEY (BilledBy) REFERENCES Health_Workers(WorkerID) ON DELETE SET NULL,
+                FOREIGN KEY (PrescriptionID) REFERENCES Treatment(TreatmentID) ON DELETE SET NULL,
+                FOREIGN KEY (PharmacistID) REFERENCES Health_Workers(WorkerID) ON DELETE SET NULL
             )
         """)
 

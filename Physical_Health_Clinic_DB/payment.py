@@ -53,19 +53,23 @@ class PaymentWindow(ctk.CTkToplevel):
         main_frame = ctk.CTkFrame(self)
         main_frame.pack(fill="both", expand=True, padx=20, pady=20)
 
-        # Tabview for Form (Process Pending vs Create Manual Service Invoice)
-        self.form_tabview = ctk.CTkTabview(main_frame, width=420)
-        self.form_tabview.pack(side="left", fill="y", padx=15, pady=15)
-        
-        self.tab_process = self.form_tabview.add("Process Pending Billing")
-        self.tab_create = self.form_tabview.add("Add Service Invoice")
+        # Tabview for Form (Process Pending vs Create Manual Service Invoice) - hidden for Administrator
+        if self.user_role == "Administrator":
+            self.table_frame = ctk.CTkFrame(main_frame)
+            self.table_frame.pack(side="right", fill="both", expand=True, padx=15, pady=15)
+        else:
+            self.form_tabview = ctk.CTkTabview(main_frame, width=420)
+            self.form_tabview.pack(side="left", fill="y", padx=15, pady=15)
+            
+            self.tab_process = self.form_tabview.add("Process Pending Billing")
+            self.tab_create = self.form_tabview.add("Add Service Invoice")
 
-        self.setup_process_tab()
-        self.setup_create_tab()
+            self.setup_process_tab()
+            self.setup_create_tab()
 
-        # Right Panel (List Payments)
-        self.table_frame = ctk.CTkFrame(main_frame)
-        self.table_frame.pack(side="right", fill="both", expand=True, padx=15, pady=15)
+            # Right Panel (List Payments)
+            self.table_frame = ctk.CTkFrame(main_frame)
+            self.table_frame.pack(side="right", fill="both", expand=True, padx=15, pady=15)
 
         # Search Bar
         search_frame = ctk.CTkFrame(self.table_frame, fg_color="transparent")
@@ -277,6 +281,8 @@ class PaymentWindow(ctk.CTkToplevel):
             print(f"Error loading payments: {e}")
 
     def on_payment_selected(self, event):
+        if self.user_role == "Administrator":
+            return
         selected = self.table.selection()
         if not selected:
             return

@@ -268,303 +268,477 @@ class PharmacistDashboard(ctk.CTk):
 
 
 class MedicineDispensingWindow(ctk.CTkToplevel):
-    """Pharmacy Medicine Dispensing interface."""
+    """Grouped Prescription Dispensing and Integrated Payment Processing."""
 
     def __init__(self, parent):
         super().__init__(parent)
         self.master = parent
 
-        self.title("Pharmacy Medicine Dispensing Portal")
-        self.geometry("1200x700")
+        self.title("Pharmacy Dispensing & Cashier Portal")
+        self.geometry("1400x820")
         self.resizable(True, True)
         self.transient(parent)
         self.grab_set()
 
+        # Selected prescription tracking
+        self.selected_treatment_id = None
+        self.selected_patient_id = None
+        self.selected_patient_name = None
+        self.selected_status = None
+        self.prescription_items = []
+        self.grand_total = 0.00
+
         # Title
         ctk.CTkLabel(
             self,
-            text="💊 Medicine Dispensing Portal",
+            text="💊 Pharmacy Dispensing & Integrated Payment Portal",
             font=("Arial", 22, "bold"),
             text_color="#1F6AA5"
         ).pack(pady=15)
 
-        # Main Layout
-        main_frame = ctk.CTkFrame(self)
-        main_frame.pack(fill="both", expand=True, padx=20, pady=15)
+        # Main Split Workspace
+        workspace = ctk.CTkFrame(self, fg_color="transparent")
+        workspace.pack(fill="both", expand=True, padx=20, pady=10)
 
-        # Table showing Pending Prescriptions
-        self.table_frame = ctk.CTkFrame(main_frame)
-        self.table_frame.pack(fill="both", expand=True, pady=10)
+        # ==============================
+        # Left Panel: Pending Queue
+        # ==============================
+        left_panel = ctk.CTkFrame(workspace, fg_color=dashboard_theme.CARD_BG, border_color=dashboard_theme.BORDER_COLOR, border_width=1, corner_radius=12)
+        left_panel.pack(side="left", fill="both", expand=True, padx=5, pady=5)
 
         ctk.CTkLabel(
-            self.table_frame,
-            text="Pending Prescriptions Queue",
-            font=("Arial", 14, "bold"),
+            left_panel,
+            text="📋 Pending Prescriptions Queue",
+            font=("Arial", 15, "bold"),
             text_color=dashboard_theme.TEXT_PRIMARY
-        ).pack(anchor="w", padx=10, pady=5)
+        ).pack(anchor="w", padx=15, pady=10)
 
-        columns = ("Prescription ID", "Patient Name", "Prescribed Medicine", "Dosage", "Qty", "Doctor", "Date")
-        self.table = ttk.Treeview(self.table_frame, columns=columns, show="headings", height=12)
-        
-        # Style
-        style = ttk.Style()
-        style.theme_use("clam")
-        style.configure(
-            "Treeview",
-            background="#FFFFFF",
-            foreground="#1E293B",
-            fieldbackground="#FFFFFF",
-            rowheight=35,
-            font=("Arial", 11)
+        container_queue = ctk.CTkFrame(left_panel, fg_color="transparent")
+        container_queue.pack(fill="both", expand=True, padx=15, pady=(0, 15))
+
+        scrollbar_queue = ttk.Scrollbar(container_queue)
+        scrollbar_queue.pack(side="right", fill="y")
+
+        columns_queue = ("Presc ID", "Patient Name", "Date", "Doctor", "Medicines", "Status")
+        self.queue_table = ttk.Treeview(
+            container_queue,
+            columns=columns_queue,
+            show="headings",
+            yscrollcommand=scrollbar_queue.set,
+            height=15
         )
-        style.configure(
-            "Treeview.Heading",
-            background="#F1F5F9",
-            foreground="#475569",
-            font=("Arial", 11, "bold"),
-            relief="flat"
+        for col in columns_queue:
+            self.queue_table.heading(col, text=col, anchor="center")
+            self.queue_table.column(col, width=110, anchor="center")
+        self.queue_table.column("Patient Name", width=140)
+        self.queue_table.column("Medicines", width=250, anchor="w")
+        self.queue_table.column("Status", width=130)
+
+        self.queue_table.pack(side="left", fill="both", expand=True)
+        scrollbar_queue.config(command=self.queue_table.yview)
+        self.queue_table.bind("<<TreeviewSelect>>", self.on_select_prescription)
+
+        # ==============================
+        # Right Panel: Detail & Action Panel
+        # ==============================
+        self.right_panel = ctk.CTkFrame(workspace, fg_color=dashboard_theme.CARD_BG, border_color=dashboard_theme.BORDER_COLOR, border_width=1, corner_radius=12, width=640)
+        self.right_panel.pack(side="right", fill="both", expand=False, padx=5, pady=5)
+        self.right_panel.pack_propagate(False)
+
+        ctk.CTkLabel(
+            self.right_panel,
+            text="🩺 Prescription & Billing Summary",
+            font=("Arial", 15, "bold"),
+            text_color=dashboard_theme.TEXT_PRIMARY
+        ).pack(anchor="w", padx=20, pady=10)
+
+        # Patient Context Box
+        self.patient_info_frame = ctk.CTkFrame(self.right_panel, fg_color="#F8FAFC", corner_radius=8)
+        self.patient_info_frame.pack(fill="x", padx=20, pady=5)
+
+        self.patient_lbl = ctk.CTkLabel(self.patient_info_frame, text="Patient: No selection", font=("Arial", 12, "bold"), text_color=dashboard_theme.TEXT_PRIMARY)
+        self.patient_lbl.pack(anchor="w", padx=15, pady=4)
+
+        self.presc_meta_lbl = ctk.CTkLabel(self.patient_info_frame, text="Prescription details will appear here.", font=("Arial", 11), text_color=dashboard_theme.TEXT_SECONDARY)
+        self.presc_meta_lbl.pack(anchor="w", padx=15, pady=4)
+
+        # Table showing Prescription Items
+        self.items_container = ctk.CTkFrame(self.right_panel, fg_color="transparent")
+        self.items_container.pack(fill="both", expand=True, padx=20, pady=10)
+
+        scrollbar_items = ttk.Scrollbar(self.items_container)
+        scrollbar_items.pack(side="right", fill="y")
+
+        columns_items = ("Medicine", "Qty", "Price", "Subtotal", "Stock Status")
+        self.items_table = ttk.Treeview(
+            self.items_container,
+            columns=columns_items,
+            show="headings",
+            yscrollcommand=scrollbar_items.set,
+            height=6
         )
-        style.map("Treeview", background=[("selected", "#E2E8F0")], foreground=[("selected", "#0F172A")])
+        for col in columns_items:
+            self.items_table.heading(col, text=col, anchor="w")
+            self.items_table.column(col, width=90, anchor="w")
+        self.items_table.column("Medicine", width=160)
+        self.items_table.column("Stock Status", width=120)
 
-        for col in columns:
-            self.table.heading(col, text=col, anchor="center")
-            self.table.column(col, width=150, anchor="center")
-        self.table.column("Prescribed Medicine", width=180)
-        self.table.column("Patient Name", width=180)
+        self.items_table.pack(side="left", fill="both", expand=True)
+        scrollbar_items.config(command=self.items_table.yview)
 
-        v_scroll = ttk.Scrollbar(self.table_frame, orient="vertical", command=self.table.yview)
-        self.table.configure(yscrollcommand=v_scroll.set)
+        # Grand Total Card
+        self.total_card = ctk.CTkFrame(self.right_panel, fg_color="#F0FDF4", border_color="#DCFCE7", border_width=1, corner_radius=10, height=60)
+        self.total_card.pack(fill="x", padx=20, pady=10)
+        self.total_card.pack_propagate(False)
+
+        self.total_lbl = ctk.CTkLabel(self.total_card, text="Grand Total: Le 0.00", font=("Arial", 18, "bold"), text_color="#15803D")
+        self.total_lbl.pack(side="left", padx=25, pady=15)
+
+        # Action Panel Split
+        self.action_frame = ctk.CTkFrame(self.right_panel, fg_color="transparent")
+        self.action_frame.pack(fill="x", padx=20, pady=5)
+
+        # Dispensing Control
+        self.dispense_frame = ctk.CTkFrame(self.action_frame, fg_color="transparent")
+        self.dispense_frame.pack(fill="x", pady=5)
         
-        self.table.pack(side="left", fill="both", expand=True)
-        v_scroll.pack(side="right", fill="y")
-
-        self.table.bind("<<TreeviewSelect>>", self.on_select_pending)
-
-        # Bottom Action Bar
-        action_bar = ctk.CTkFrame(main_frame, height=80)
-        action_bar.pack(fill="x", pady=10)
-        action_bar.pack_propagate(False)
-
         self.dispense_btn = ctk.CTkButton(
-            action_bar,
-            text="⚡ Dispense Selected Medicine",
-            font=("Arial", 14, "bold"),
+            self.dispense_frame,
+            text="⚡ Step 1: Dispense Medicines",
+            font=("Arial", 13, "bold"),
             fg_color="gray",
             state="disabled",
-            command=self.dispense_medicine
+            height=40,
+            command=self.dispense_prescription
         )
-        self.dispense_btn.pack(side="right", padx=20, pady=15)
+        self.dispense_btn.pack(fill="x")
 
-        self.info_lbl = ctk.CTkLabel(
-            action_bar,
-            text="Select a pending prescription from the table to dispense.",
-            font=("Arial", 12, "italic")
+        # Payment Control
+        self.payment_frame = ctk.CTkFrame(self.action_frame, fg_color="#F8FAFC", corner_radius=10, border_color=dashboard_theme.BORDER_COLOR, border_width=1)
+        self.payment_frame.pack(fill="x", pady=5, ipady=10)
+
+        ctk.CTkLabel(
+            self.payment_frame,
+            text="💵 Step 2: Integrated Payment Collection",
+            font=("Arial", 12, "bold"),
+            text_color=dashboard_theme.TEXT_PRIMARY
+        ).pack(anchor="w", padx=15, pady=(8, 4))
+
+        select_pay_frame = ctk.CTkFrame(self.payment_frame, fg_color="transparent")
+        select_pay_frame.pack(fill="x", padx=15, pady=4)
+        
+        ctk.CTkLabel(select_pay_frame, text="Payment Method:", font=("Arial", 12)).pack(side="left", padx=5)
+        
+        self.method_combo = ctk.CTkComboBox(
+            select_pay_frame,
+            values=["Cash", "Orange Money", "AfriMoney", "QMoney", "Wave"],
+            width=160
         )
-        self.info_lbl.pack(side="left", padx=20, pady=15)
+        self.method_combo.pack(side="left", padx=10)
+        self.method_combo.set("Cash")
 
+        self.pay_btn = ctk.CTkButton(
+            self.payment_frame,
+            text="Receive Payment",
+            font=("Arial", 13, "bold"),
+            fg_color="gray",
+            state="disabled",
+            height=40,
+            command=self.receive_payment
+        )
+        self.pay_btn.pack(fill="x", padx=15, pady=(10, 0))
+
+        # Initial Load
         self.load_pending_prescriptions()
 
     def load_pending_prescriptions(self):
-        for item in self.table.get_children():
-            self.table.delete(item)
+        for item in self.queue_table.get_children():
+            self.queue_table.delete(item)
 
         try:
             conn = connect_db()
             cursor = conn.cursor()
+            # Fetch grouped TreatmentID (representing the prescription list)
             query = """
-                SELECT pr.PrescriptionID, p.FullName, pr.MedicineName, pr.Dosage, pr.QuantityPrescribed, hw.FullName, DATE(pr.DatePrescribed)
+                SELECT pr.TreatmentID, p.FullName, DATE(pr.DatePrescribed), hw.FullName, 
+                       GROUP_CONCAT(pr.MedicineName SEPARATOR ', '), pr.Status, p.PatientID
                 FROM Prescription pr
                 LEFT JOIN Patients p ON pr.PatientID = p.PatientID
                 LEFT JOIN Health_Workers hw ON pr.DoctorID = hw.WorkerID
-                WHERE pr.Status = 'Pending'
-                ORDER BY pr.PrescriptionID DESC
+                WHERE pr.Status IN ('Pending', 'Dispensed')
+                GROUP BY pr.TreatmentID, p.FullName, DATE(pr.DatePrescribed), hw.FullName, pr.Status, p.PatientID
+                ORDER BY pr.Status DESC, pr.TreatmentID DESC
             """
             cursor.execute(query)
             for row in cursor.fetchall():
                 cleaned = ["" if val is None else str(val) for val in row]
-                self.table.insert("", "end", values=cleaned)
+                
+                # Format Status visually
+                status = cleaned[5]
+                if status == 'Pending':
+                    cleaned[5] = "⏳ Pending Dispense"
+                elif status == 'Dispensed':
+                    cleaned[5] = "💵 Pending Payment"
+
+                # Keep TreatmentID raw, but format visual columns
+                self.queue_table.insert("", "end", values=(
+                    f"PR-{int(cleaned[0]):04d}",
+                    cleaned[1],
+                    cleaned[2],
+                    cleaned[3],
+                    cleaned[4],
+                    cleaned[5],
+                    cleaned[6]  # Hidden PatientID context
+                ))
             conn.close()
         except Exception as e:
             messagebox.showerror("Error", f"Failed to load pending prescriptions:\n{e}")
 
-    def on_select_pending(self, event):
-        selected = self.table.selection()
-        if selected:
-            self.dispense_btn.configure(state="normal", fg_color="#4CAF50")
-            row = self.table.item(selected[0], "values")
-            self.info_lbl.configure(text=f"Selected: {row[2]} (Qty: {row[4]}) for {row[1]}")
-        else:
-            self.dispense_btn.configure(state="disabled", fg_color="gray")
-            self.info_lbl.configure(text="Select a pending prescription from the table to dispense.")
-
-    def dispense_medicine(self):
-        selected = self.table.selection()
+    def on_select_prescription(self, event):
+        selected = self.queue_table.selection()
         if not selected:
+            self.clear_details()
             return
 
-        row = self.table.item(selected[0], "values")
-        prescription_id = row[0]
+        row = self.queue_table.item(selected[0], "values")
+        treatment_id = int(row[0].replace("PR-", ""))
         patient_name = row[1]
-        medicine_name = row[2]
-        qty_prescribed = int(row[4])
+        date_prescribed = row[2]
+        doctor_name = row[3]
+        status_label = row[5]
+
+        self.selected_treatment_id = treatment_id
+        self.selected_patient_name = patient_name
+        self.selected_patient_id = int(row[6])
+        
+        # Load details
+        self.patient_lbl.configure(text=f"Patient: {patient_name} (PR-{treatment_id:04d})")
+        self.presc_meta_lbl.configure(text=f"Doctor: {doctor_name} | Date: {date_prescribed}")
+
+        # Clear Items Table
+        for item in self.items_table.get_children():
+            self.items_table.delete(item)
+
+        self.prescription_items = []
+        self.grand_total = 0.00
+        has_stock_error = False
+
+        try:
+            conn = connect_db()
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT pr.PrescriptionID, pr.MedicineName, pr.QuantityPrescribed, pr.Status
+                FROM Prescription pr
+                WHERE pr.TreatmentID = %s AND pr.Status IN ('Pending', 'Dispensed')
+            """, (treatment_id,))
+            rows = cursor.fetchall()
+
+            for presc_id, med_name, qty, item_status in rows:
+                # Query stock availability & price
+                cursor.execute("""
+                    SELECT InventoryID, Quantity, SellingPrice 
+                    FROM Inventory 
+                    WHERE LOWER(MedicineName) = LOWER(%s)
+                """, (med_name,))
+                inv = cursor.fetchone()
+
+                if inv:
+                    inv_id, current_qty, sell_price = inv
+                    subtotal = qty * float(sell_price)
+                    self.grand_total += subtotal
+
+                    if current_qty == 0:
+                        stock_status = "🔴 Out of Stock"
+                        has_stock_error = True
+                    elif current_qty < qty:
+                        stock_status = f"🔴 Low (In Stock: {current_qty})"
+                        has_stock_error = True
+                    else:
+                        stock_status = f"🟢 In Stock ({current_qty})"
+
+                    self.prescription_items.append({
+                        'presc_id': presc_id,
+                        'med_name': med_name,
+                        'qty': qty,
+                        'inv_id': inv_id,
+                        'current_qty': current_qty,
+                        'price': float(sell_price),
+                        'subtotal': subtotal
+                    })
+
+                    self.items_table.insert("", "end", values=(
+                        med_name,
+                        qty,
+                        f"Le {float(sell_price):,.2f}",
+                        f"Le {subtotal:,.2f}",
+                        stock_status
+                    ))
+                else:
+                    self.items_table.insert("", "end", values=(
+                        med_name,
+                        qty,
+                        "N/A",
+                        "N/A",
+                        "🔴 Out of Stock"
+                    ))
+                    has_stock_error = True
+
+            conn.close()
+
+            # Set Grand Total Label
+            self.total_lbl.configure(text=f"Grand Total: Le {self.grand_total:,.2f}")
+
+            # Check logical workflow state (Dispense vs Collect Payment)
+            if "Pending Dispense" in status_label:
+                self.selected_status = 'Pending'
+                if has_stock_error:
+                    self.dispense_btn.configure(state="disabled", fg_color="gray", text="⚡ Insufficient Inventory")
+                else:
+                    self.dispense_btn.configure(state="normal", fg_color="#3B82F6", text="⚡ Step 1: Dispense Medicines")
+                self.pay_btn.configure(state="disabled", fg_color="gray")
+            elif "Pending Payment" in status_label:
+                self.selected_status = 'Dispensed'
+                self.dispense_btn.configure(state="disabled", fg_color="gray", text="✅ Already Dispensed")
+                self.pay_btn.configure(state="normal", fg_color="#10B981")
+
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to retrieve prescription details:\n{e}")
+
+    def clear_details(self):
+        self.selected_treatment_id = None
+        self.selected_patient_id = None
+        self.selected_patient_name = None
+        self.selected_status = None
+        self.prescription_items = []
+        self.grand_total = 0.00
+        self.patient_lbl.configure(text="Patient: No selection")
+        self.presc_meta_lbl.configure(text="Prescription details will appear here.")
+        self.total_lbl.configure(text="Grand Total: Le 0.00")
+        self.dispense_btn.configure(state="disabled", fg_color="gray", text="⚡ Step 1: Dispense Medicines")
+        self.pay_btn.configure(state="disabled", fg_color="gray")
+        for item in self.items_table.get_children():
+            self.items_table.delete(item)
+
+    def dispense_prescription(self):
+        if not self.selected_treatment_id or self.selected_status != 'Pending':
+            return
 
         confirm = messagebox.askyesno(
-            "Dispense Medicine",
-            f"Are you sure you want to dispense {qty_prescribed} unit(s) of '{medicine_name}' to {patient_name}?"
+            "Confirm Dispensing",
+            f"Are you sure you want to dispense prescription PR-{self.selected_treatment_id:04d} for {self.selected_patient_name}?"
         )
         if not confirm:
-            return
-
-        # Prompt for payment method
-        dialog = PaymentMethodDialog(self)
-        self.wait_window(dialog)
-        method = dialog.selected_method
-        if not method:
             return
 
         try:
             conn = connect_db()
             cursor = conn.cursor()
 
-            # 1. Look up the medicine in Inventory
+            # Iterate and dispense each line item
+            for item in self.prescription_items:
+                presc_id = item['presc_id']
+                inv_id = item['inv_id']
+                qty = item['qty']
+                current_qty = item['current_qty']
+
+                # Double check inventory levels
+                if current_qty < qty:
+                    messagebox.showerror("Stock Error", f"Insufficient inventory for {item['med_name']}.\nProcess canceled.")
+                    conn.close()
+                    return
+
+                # 1. Decrement Quantity in Inventory
+                new_qty = current_qty - qty
+                cursor.execute("UPDATE Inventory SET Quantity = %s WHERE InventoryID = %s", (new_qty, inv_id))
+
+                # 2. Record in Medicine_Dispensing
+                cursor.execute("""
+                    INSERT INTO Medicine_Dispensing (PrescriptionID, InventoryID, QuantityDispensed, DispensedDate, PharmacistID)
+                    VALUES (%s, %s, %s, CURRENT_TIMESTAMP, %s)
+                """, (presc_id, inv_id, qty, self.master.pharmacist_worker_id))
+
+                # 3. Update individual Prescription status to 'Dispensed'
+                cursor.execute("UPDATE Prescription SET Status = 'Dispensed' WHERE PrescriptionID = %s", (presc_id,))
+
+            conn.commit()
+            conn.close()
+
+            # Write audit log
+            user_id = self.master.pharmacist_user.get("user_id", 1)
+            from database import log_audit_action
+            log_audit_action(user_id, f"Dispensed items for Prescription/Treatment ID: {self.selected_treatment_id} (Patient: {self.selected_patient_name})")
+
+            messagebox.showinfo("Success", f"Prescription PR-{self.selected_treatment_id:04d} successfully dispensed!\nPlease collect payment now.")
+            
+            # Reload views
+            self.load_pending_prescriptions()
+            self.clear_details()
+            self.master.refresh_dashboard()
+
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to dispense prescription:\n{e}")
+
+    def receive_payment(self):
+        if not self.selected_treatment_id or self.selected_status != 'Dispensed':
+            return
+
+        method = self.method_combo.get()
+        confirm = messagebox.askyesno(
+            "Confirm Payment",
+            f"Confirm payment collection of Le {self.grand_total:,.2f} via {method} for PR-{self.selected_treatment_id:04d}?"
+        )
+        if not confirm:
+            return
+
+        try:
+            conn = connect_db()
+            cursor = conn.cursor()
+
+            # 1. Create a single grouped Payment record for this entire prescription
             cursor.execute("""
-                SELECT InventoryID, Quantity, SellingPrice 
-                FROM Inventory 
-                WHERE LOWER(MedicineName) = LOWER(%s) AND Quantity > 0 
-                LIMIT 1
-            """, (medicine_name,))
-            inv_row = cursor.fetchone()
-
-            if not inv_row:
-                messagebox.showerror(
-                    "Dispense Error",
-                    f"The prescribed medicine '{medicine_name}' is currently OUT OF STOCK.\n"
-                    "Please contact the Administrator to restock."
-                )
-                conn.close()
-                return
-
-            inv_id, current_qty, selling_price = inv_row
-
-            # 2. Check if inventory has enough stock
-            if current_qty < qty_prescribed:
-                messagebox.showerror(
-                    "Dispense Error",
-                    f"Insufficient Stock! '{medicine_name}' only has {current_qty} unit(s) in stock.\n"
-                    f"Required: {qty_prescribed} unit(s)."
-                )
-                conn.close()
-                return
-
-            # 3. Decrement Quantity in Inventory
-            new_qty = current_qty - qty_prescribed
-            cursor.execute("UPDATE Inventory SET Quantity = %s WHERE InventoryID = %s", (new_qty, inv_id))
-
-            # 4. Record details in Medicine_Dispensing table
-            cursor.execute("""
-                INSERT INTO Medicine_Dispensing (PrescriptionID, InventoryID, QuantityDispensed, DispensedDate, PharmacistID)
-                VALUES (%s, %s, %s, CURRENT_TIMESTAMP, %s)
-            """, (prescription_id, inv_id, qty_prescribed, self.master.pharmacist_worker_id))
-            dispensing_id = cursor.lastrowid
-
-            # 5. Update Prescription Status to 'Dispensed'
-            cursor.execute("UPDATE Prescription SET Status = 'Dispensed' WHERE PrescriptionID = %s", (prescription_id,))
-
-            # 6. Retrieve PatientID from Prescription
-            cursor.execute("SELECT PatientID FROM Prescription WHERE PrescriptionID = %s", (prescription_id,))
-            patient_id = cursor.fetchone()[0]
-
-            # 7. Create Payment record for Medicines
-            total_amount = qty_prescribed * float(selling_price)
-            cursor.execute("""
-                INSERT INTO Payment (PatientID, Amount, PaymentType, ServiceID, LabRequestID, DispensingID, PaymentMethod, PaymentDate, BilledBy)
-                VALUES (%s, %s, 'Medicines', NULL, NULL, %s, %s, CURRENT_TIMESTAMP, %s)
-            """, (patient_id, total_amount, dispensing_id, method, self.master.pharmacist_worker_id))
+                INSERT INTO Payment (PatientID, Amount, PaymentType, PrescriptionID, PaymentMethod, PaymentDate, BilledBy, PharmacistID, PaymentStatus)
+                VALUES (%s, %s, 'Medicines', %s, %s, CURRENT_TIMESTAMP, %s, %s, 'Paid')
+            """, (self.selected_patient_id, self.grand_total, self.selected_treatment_id, method, self.master.pharmacist_worker_id, self.master.pharmacist_worker_id))
             payment_id = cursor.lastrowid
 
-            # 8. Create Receipt record (prints medicine receipt)
+            # 2. Create corresponding Receipt record
             cursor.execute("""
                 INSERT INTO Receipt (PaymentID, IssueDate, PrintedBy)
                 VALUES (%s, CURRENT_TIMESTAMP, %s)
             """, (payment_id, self.master.pharmacist_worker_id))
             receipt_id = cursor.lastrowid
 
+            # 3. Mark all prescriptions in this Treatment group as 'Paid'
+            cursor.execute("UPDATE Prescription SET Status = 'Paid' WHERE TreatmentID = %s", (self.selected_treatment_id,))
+
             conn.commit()
             conn.close()
- 
+
             # Write audit logs
             user_id = self.master.pharmacist_user.get("user_id", 1)
             from database import log_audit_action
-            log_audit_action(user_id, f"Dispensed {qty_prescribed} unit(s) of '{medicine_name}' (DispensingID: {dispensing_id}) for PatientID: {patient_id}")
-            log_audit_action(user_id, f"Created medicine payment of Le {total_amount:,.2f} for PatientID: {patient_id} (PaymentID: {payment_id})")
-            log_audit_action(user_id, f"Generated medicine receipt (ReceiptID: {receipt_id}) for PatientID: {patient_id}")
- 
-            messagebox.showinfo(
-                "Success", 
-                f"Dispensed successfully!\n"
-                f"Medicine: {medicine_name}\n"
-                f"Quantity: {qty_prescribed} units\n"
-                f"Remaining Stock: {new_qty} units\n"
-                f"Receipt ID generated: #{receipt_id}"
-            )
+            log_audit_action(user_id, f"Collected payment of Le {self.grand_total:,.2f} via {method} for Prescription ID: {self.selected_treatment_id} (ReceiptID: {receipt_id})")
+
+            messagebox.showinfo("Success", f"Payment received successfully!\nGroup Receipt ID generated: #{receipt_id}")
             
-            # Ask to print receipt
-            print_confirm = messagebox.askyesno("Print Receipt", "Would you like to print/export the Medicine Receipt now?")
+            # Print/Export receipt
+            print_confirm = messagebox.askyesno("Print Receipt", "Would you like to print/export the grouped PDF Receipt now?")
             if print_confirm:
                 self.open_receipt_print_dialog(receipt_id)
 
-            # Reload lists and stats
+            # Reload views
             self.load_pending_prescriptions()
-            self.dispense_btn.configure(state="disabled", fg_color="gray")
-            self.info_lbl.configure(text="Select a pending prescription from the table to dispense.")
-            
+            self.clear_details()
             self.master.refresh_dashboard()
 
         except Exception as e:
-            messagebox.showerror("Dispense Error", f"Failed to complete dispensing process:\n{e}")
+            messagebox.showerror("Error", f"Failed to complete payment receipt:\n{e}")
 
     def open_receipt_print_dialog(self, receipt_id):
-        # We can import and trigger receipt PDF popup directly
         from receipt import ReceiptWindow
         r_win = ReceiptWindow(self)
         r_win.selected_receipt_id = receipt_id
         r_win.load_selected_receipt_details(receipt_id)
-
-
-class PaymentMethodDialog(ctk.CTkToplevel):
-    def __init__(self, parent):
-        super().__init__(parent)
-        self.title("Select Payment Method")
-        self.geometry("420x220")
-        self.resizable(False, False)
-        self.transient(parent)
-        self.grab_set()
-
-        self.selected_method = None
-
-        ctk.CTkLabel(
-            self, 
-            text="💳 Select Payment Method for Medicines", 
-            font=("Arial", 16, "bold"),
-            text_color="#1F6AA5"
-        ).pack(pady=25)
-
-        btn_frame = ctk.CTkFrame(self, fg_color="transparent")
-        btn_frame.pack(pady=10)
-
-        ctk.CTkButton(btn_frame, text="💵 Cash", width=100, command=lambda: self.select("Cash")).grid(row=0, column=0, padx=5)
-        ctk.CTkButton(btn_frame, text="📱 Mobile Money", width=120, command=lambda: self.select("Mobile Money")).grid(row=0, column=1, padx=5)
-        ctk.CTkButton(btn_frame, text="💳 Card", width=100, command=lambda: self.select("Card")).grid(row=0, column=2, padx=5)
-
-        self.protocol("WM_DELETE_WINDOW", self.on_close)
-
-    def select(self, method):
-        self.selected_method = method
-        self.destroy()
-
-    def on_close(self):
-        self.selected_method = None
-        self.destroy()
 
 
 if __name__ == "__main__":

@@ -62,8 +62,6 @@ class ReceptionistDashboard(ctk.CTk):
             ("🏠 Dashboard", self.refresh_dashboard),
             ("👥 Patients", self.open_patients),
             ("📅 Appointments", self.open_appointments),
-            ("💳 Payments", self.open_payments),
-            ("🧾 Receipts", self.open_receipts),
             ("📋 Queue Management", self.open_queue),
             ("👤 My Profile", self.open_profile),
             ("🚪 Logout", self.logout)
