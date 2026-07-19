@@ -34,10 +34,12 @@ class ReceiptWindow(ctk.CTkToplevel):
         self.selected_receipt_id = None
         self.selected_payment_data = None
 
-        # Check current user worker id
+        # Check current user worker id and role
         self.worker_id = 1
+        self.user_role = "Unknown"
         if hasattr(session, "current_user") and session.current_user:
             self.worker_id = session.current_user.get("worker_id", 1)
+            self.user_role = session.current_user.get("role", "Unknown")
 
         # Back Button
         back_btn = ctk.CTkButton(
@@ -95,13 +97,15 @@ class ReceiptWindow(ctk.CTkToplevel):
 
         # Action Buttons
         btn_frame = ctk.CTkFrame(form_frame, fg_color="transparent")
-        btn_frame.pack(pady=25)
+        btn_frame.pack(pady=15)
 
-        ctk.CTkButton(btn_frame, text="➕ Generate Receipt", command=self.generate_receipt, width=155).grid(row=0, column=0, padx=5, pady=5)
-        ctk.CTkButton(btn_frame, text="👁 Preview Text", command=self.print_receipt, width=155).grid(row=0, column=1, padx=5, pady=5)
-        ctk.CTkButton(btn_frame, text="📄 Export PDF Receipt", command=self.export_pdf, fg_color="#4CAF50", hover_color="#43A047", width=155).grid(row=1, column=0, padx=5, pady=5)
-        ctk.CTkButton(btn_frame, text="❌ Delete Receipt", command=self.delete_receipt, fg_color="red", hover_color="#b71c1c", width=155).grid(row=1, column=1, padx=5, pady=5)
-        ctk.CTkButton(btn_frame, text="🧹 Clear Fields", command=self.clear_fields, width=320).grid(row=2, column=0, columnspan=2, padx=5, pady=5)
+        ctk.CTkButton(btn_frame, text="➕ Generate Receipt", command=self.generate_receipt, width=155).grid(row=0, column=0, padx=5, pady=4)
+        ctk.CTkButton(btn_frame, text="👁 Preview PDF", command=self.preview_pdf, width=155).grid(row=0, column=1, padx=5, pady=4)
+        ctk.CTkButton(btn_frame, text="🖨 Print PDF", command=self.print_pdf, fg_color="#3B82F6", hover_color="#2563EB", width=155).grid(row=1, column=0, padx=5, pady=4)
+        ctk.CTkButton(btn_frame, text="📄 Save as PDF", command=self.export_pdf, fg_color="#10B981", hover_color="#059669", width=155).grid(row=1, column=1, padx=5, pady=4)
+        ctk.CTkButton(btn_frame, text="🧹 Clear Fields", command=self.clear_fields, width=155).grid(row=2, column=0, padx=5, pady=4)
+        ctk.CTkButton(btn_frame, text="❌ Delete", command=self.delete_receipt, fg_color="red", hover_color="#b71c1c", width=155).grid(row=2, column=1, padx=5, pady=4)
+        ctk.CTkButton(btn_frame, text="🚪 Close Window", command=self.destroy, fg_color="#4B5563", hover_color="#374151", width=320).grid(row=3, column=0, columnspan=2, padx=5, pady=8)
 
         # Right Panel (List)
         self.table_frame = ctk.CTkFrame(main_frame)
@@ -162,10 +166,23 @@ class ReceiptWindow(ctk.CTkToplevel):
             conn = connect_db()
             cursor = conn.cursor()
             cursor.execute("""
-                SELECT r.ReceiptID, r.PaymentID, p.Amount, r.IssueDate, p.PaymentMethod, pat.FullName
+                SELECT 
+                    r.ReceiptID, 
+                    r.PaymentID, 
+                    p.Amount, 
+                    r.IssueDate, 
+                    p.PaymentMethod, 
+                    pat.FullName,
+                    p.PrescriptionID,
+                    (SELECT hw.FullName FROM Health_Workers hw 
+                     JOIN Prescription pr ON hw.WorkerID = pr.DoctorID 
+                     WHERE pr.TreatmentID = p.PrescriptionID LIMIT 1) AS DoctorName,
+                    ph.FullName AS PharmacistName,
+                    p.PaymentType
                 FROM Receipt r
                 JOIN Payment p ON r.PaymentID = p.PaymentID
                 JOIN Patients pat ON p.PatientID = pat.PatientID
+                LEFT JOIN Health_Workers ph ON p.PharmacistID = ph.WorkerID
                 WHERE r.ReceiptID = %s
             """, (receipt_id,))
             row = cursor.fetchone()
@@ -177,7 +194,11 @@ class ReceiptWindow(ctk.CTkToplevel):
                     'Amount': row[2],
                     'PaymentDate': row[3],
                     'PaymentMethod': row[4],
-                    'PatientName': row[5]
+                    'PatientName': row[5],
+                    'PrescriptionID': row[6],
+                    'DoctorName': row[7] if row[7] else "N/A",
+                    'PharmacistName': row[8] if row[8] else "Staff Duty",
+                    'PaymentType': row[9]
                 }
                 self.receipt_number_entry.configure(state="normal")
                 self.receipt_number_entry.delete(0, "end")
@@ -201,13 +222,18 @@ class ReceiptWindow(ctk.CTkToplevel):
         try:
             conn = connect_db()
             cursor = conn.cursor()
-            cursor.execute("""
+            query = """
                 SELECT p.PaymentID, pat.FullName, p.Amount
                 FROM Payment p
                 LEFT JOIN Patients pat ON p.PatientID = pat.PatientID
                 WHERE p.PaymentMethod <> 'Pending'
-                ORDER BY p.PaymentID DESC
-            """)
+            """
+            params = []
+            if self.user_role != "Administrator" and self.user_role != "Accountant":
+                query += " AND p.BilledBy = %s"
+                params.append(self.worker_id)
+            query += " ORDER BY p.PaymentID DESC"
+            cursor.execute(query, tuple(params))
             payment_list = [f"Payment #{row[0]} - {row[1]} - Le {row[2]:,.2f}" for row in cursor.fetchall()]
             self.payment_combo.configure(values=payment_list)
             if payment_list:
@@ -225,9 +251,21 @@ class ReceiptWindow(ctk.CTkToplevel):
             conn = connect_db()
             cursor = conn.cursor()
             cursor.execute("""
-                SELECT p.PaymentID, pat.FullName, p.Amount, p.PaymentDate, p.PaymentMethod
+                SELECT 
+                    p.PaymentID, 
+                    pat.FullName, 
+                    p.Amount, 
+                    p.PaymentDate, 
+                    p.PaymentMethod,
+                    p.PrescriptionID,
+                    (SELECT hw.FullName FROM Health_Workers hw 
+                     JOIN Prescription pr ON hw.WorkerID = pr.DoctorID 
+                     WHERE pr.TreatmentID = p.PrescriptionID LIMIT 1) AS DoctorName,
+                    ph.FullName AS PharmacistName,
+                    p.PaymentType
                 FROM Payment p
                 LEFT JOIN Patients pat ON p.PatientID = pat.PatientID
+                LEFT JOIN Health_Workers ph ON p.PharmacistID = ph.WorkerID
                 WHERE p.PaymentID = %s
             """, (payment_id,))
             row = cursor.fetchone()
@@ -239,7 +277,11 @@ class ReceiptWindow(ctk.CTkToplevel):
                     'PatientName': row[1],
                     'Amount': row[2],
                     'PaymentDate': row[3],
-                    'PaymentMethod': row[4]
+                    'PaymentMethod': row[4],
+                    'PrescriptionID': row[5],
+                    'DoctorName': row[6] if row[6] else "N/A",
+                    'PharmacistName': row[7] if row[7] else "Staff Duty",
+                    'PaymentType': row[8]
                 }
                 self.total_amount_entry.configure(state="normal")
                 self.total_amount_entry.delete(0, "end")
@@ -257,14 +299,19 @@ class ReceiptWindow(ctk.CTkToplevel):
         try:
             conn = connect_db()
             cursor = conn.cursor()
-            cursor.execute("""
+            query = """
                 SELECT r.ReceiptID, r.PaymentID, pat.FullName, p.Amount, r.IssueDate, hw.FullName
                 FROM Receipt r
                 JOIN Payment p ON r.PaymentID = p.PaymentID
                 JOIN Patients pat ON p.PatientID = pat.PatientID
                 LEFT JOIN Health_Workers hw ON r.PrintedBy = hw.WorkerID
-                ORDER BY r.ReceiptID DESC
-            """)
+            """
+            params = []
+            if self.user_role != "Administrator" and self.user_role != "Accountant":
+                query += " WHERE p.BilledBy = %s"
+                params.append(self.worker_id)
+            query += " ORDER BY r.ReceiptID DESC"
+            cursor.execute(query, tuple(params))
             rows = cursor.fetchall()
             conn.close()
 
@@ -386,15 +433,20 @@ class ReceiptWindow(ctk.CTkToplevel):
         try:
             conn = connect_db()
             cursor = conn.cursor()
-            cursor.execute("""
+            query = """
                 SELECT r.ReceiptID, r.PaymentID, pat.FullName, p.Amount, r.IssueDate, hw.FullName
                 FROM Receipt r
                 JOIN Payment p ON r.PaymentID = p.PaymentID
                 JOIN Patients pat ON p.PatientID = pat.PatientID
                 LEFT JOIN Health_Workers hw ON r.PrintedBy = hw.WorkerID
-                WHERE pat.FullName LIKE %s OR r.ReceiptID LIKE %s
-                ORDER BY r.ReceiptID DESC
-            """, (f"%{q}%", f"%{q}%"))
+                WHERE (pat.FullName LIKE %s OR r.ReceiptID LIKE %s)
+            """
+            params = [f"%{q}%", f"%{q}%"]
+            if self.user_role != "Administrator" and self.user_role != "Accountant":
+                query += " AND p.BilledBy = %s"
+                params.append(self.worker_id)
+            query += " ORDER BY r.ReceiptID DESC"
+            cursor.execute(query, tuple(params))
             rows = cursor.fetchall()
             conn.close()
 
@@ -576,6 +628,61 @@ class ReceiptWindow(ctk.CTkToplevel):
         # Show text preview
         messagebox.showinfo("Receipt Preview", self._generate_receipt_text())
 
+    def preview_pdf(self):
+        if not PDF_AVAILABLE:
+            messagebox.showerror("PDF Library Missing", "ReportLab library is required.\nInstall it using: pip install reportlab")
+            return
+        if not self.selected_payment_data:
+            messagebox.showwarning("Warning", "Select a payment/receipt first.")
+            return
+
+        import tempfile
+        temp_dir = tempfile.gettempdir()
+        file_path = os.path.join(temp_dir, f"receipt_{self.selected_receipt_id or 0}.pdf")
+        try:
+            self._create_pdf_receipt(file_path)
+            import sys
+            import subprocess
+            if sys.platform == "darwin":  # macOS
+                subprocess.run(["open", file_path])
+            elif sys.platform == "win32":  # Windows
+                os.startfile(file_path)
+            else:  # Linux
+                subprocess.run(["xdg-open", file_path])
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to preview PDF:\n{e}")
+
+    def print_pdf(self):
+        if not PDF_AVAILABLE:
+            messagebox.showerror("PDF Library Missing", "ReportLab library is required.\nInstall it using: pip install reportlab")
+            return
+        if not self.selected_payment_data:
+            messagebox.showwarning("Warning", "Select a payment/receipt first.")
+            return
+
+        import tempfile
+        temp_dir = tempfile.gettempdir()
+        file_path = os.path.join(temp_dir, f"receipt_{self.selected_receipt_id or 0}.pdf")
+        try:
+            self._create_pdf_receipt(file_path)
+            import sys
+            import subprocess
+            if sys.platform == "darwin":  # macOS
+                # Try printing via lp, if it fails because of missing default printer, open Preview directly
+                result = subprocess.run(["lp", file_path], capture_output=True)
+                if result.returncode != 0:
+                    # Silently fallback to Preview / manual printing
+                    self.preview_pdf()
+                else:
+                    messagebox.showinfo("Success", "Receipt sent to printer successfully.")
+            elif sys.platform == "win32":  # Windows
+                os.startfile(file_path, "print")
+            else:  # Linux
+                subprocess.run(["lpr", file_path])
+        except Exception as e:
+            # Fallback to preview
+            self.preview_pdf()
+
     def export_pdf(self):
         if not PDF_AVAILABLE:
             messagebox.showerror(
@@ -602,146 +709,344 @@ class ReceiptWindow(ctk.CTkToplevel):
         except Exception as e:
             messagebox.showerror("Export Error", f"Failed to generate PDF:\n{e}")
 
-    def _create_pdf_receipt(self, file_path):
-        data = self.selected_payment_data
-        receipt_num = self.receipt_number_entry.get() or f"RCP-{self.selected_receipt_id:06d}"
-        issue_date = self.issue_date_entry.get() or datetime.now().strftime("%Y-%m-%d")
-        items = self._fetch_receipt_items(data['PaymentID'])
+    def _get_clinic_logo_drawing(self):
+        from reportlab.graphics.shapes import Drawing, Rect
+        d = Drawing(40, 40)
+        # Blue background
+        d.add(Rect(0, 0, 40, 40, fillColor=colors.HexColor('#1E3A8A'), strokeColor=None, rx=8, ry=8))
+        # White medical cross
+        d.add(Rect(16, 8, 8, 24, fillColor=colors.white, strokeColor=None))
+        d.add(Rect(8, 16, 24, 8, fillColor=colors.white, strokeColor=None))
+        return d
 
-        # Create doc
-        doc = SimpleDocTemplate(file_path, pagesize=letter, topMargin=54, bottomMargin=54, leftMargin=54, rightMargin=54)
+    def _get_qr_code_drawing(self, receipt_num):
+        from reportlab.graphics.shapes import Drawing, Rect
+        import random
+        width, height = 50, 50
+        d = Drawing(width, height)
+        # Border/bg
+        d.add(Rect(0, 0, width, height, fillColor=colors.white, strokeColor=colors.HexColor('#E2E8F0'), strokeWidth=0.5))
+        # Top-Left finder
+        d.add(Rect(2, height - 12, 10, 10, fillColor=colors.HexColor('#1E3A8A'), strokeColor=None))
+        d.add(Rect(4, height - 10, 6, 6, fillColor=colors.white, strokeColor=None))
+        d.add(Rect(5, height - 9, 4, 4, fillColor=colors.HexColor('#1E3A8A'), strokeColor=None))
+        # Top-Right finder
+        d.add(Rect(width - 12, height - 12, 10, 10, fillColor=colors.HexColor('#1E3A8A'), strokeColor=None))
+        d.add(Rect(width - 10, height - 10, 6, 6, fillColor=colors.white, strokeColor=None))
+        d.add(Rect(width - 9, height - 9, 4, 4, fillColor=colors.HexColor('#1E3A8A'), strokeColor=None))
+        # Bottom-Left finder
+        d.add(Rect(2, 2, 10, 10, fillColor=colors.HexColor('#1E3A8A'), strokeColor=None))
+        d.add(Rect(4, 4, 6, 6, fillColor=colors.white, strokeColor=None))
+        d.add(Rect(5, 5, 4, 4, fillColor=colors.HexColor('#1E3A8A'), strokeColor=None))
+        # Random QR pixel seed
+        val = sum(ord(c) for c in receipt_num)
+        random.seed(val)
+        for x in range(0, int(width), 2):
+            for y in range(0, int(height), 2):
+                if (x < 13 and y < 13) or (x < 13 and y > height - 13) or (x > width - 13 and y > height - 13):
+                    continue
+                if random.choice([True, False, False]):
+                    d.add(Rect(x, y, 1.8, 1.8, fillColor=colors.HexColor('#1E3A8A'), strokeColor=None))
+        return d
+
+    def _build_receipt_copy_table(self, receipt_num, issue_date, data, items, copy_title):
+        from reportlab.platypus import Table, TableStyle, Paragraph, Spacer
+        from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+        from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
+        
         styles = getSampleStyleSheet()
-        story = []
-
-        # Styles
-        title_style = ParagraphStyle(
-            'ReceiptTitle',
-            parent=styles['Heading1'],
+        
+        # Styles for receipt elements
+        banner_style = ParagraphStyle(
+            'BannerText',
+            parent=styles['Normal'],
             fontName='Helvetica-Bold',
-            fontSize=24,
-            textColor=colors.HexColor('#1F6AA5'),
+            fontSize=9,
+            textColor=colors.HexColor('#1E3A8A'),
             alignment=TA_CENTER
         )
-        subtitle_style = ParagraphStyle(
-            'ReceiptSubtitle',
+        title_style = ParagraphStyle(
+            'HeaderTitle',
+            parent=styles['Normal'],
+            fontName='Helvetica-Bold',
+            fontSize=13,
+            textColor=colors.HexColor('#1E3A8A'),
+            spaceAfter=1
+        )
+        motto_style = ParagraphStyle(
+            'HeaderMotto',
             parent=styles['Normal'],
             fontName='Helvetica-Oblique',
-            fontSize=10,
-            textColor=colors.grey,
-            alignment=TA_CENTER
+            fontSize=7.5,
+            textColor=colors.HexColor('#4B5563'),
+            spaceAfter=2
         )
-        meta_style = ParagraphStyle(
-            'ReceiptMeta',
+        address_style = ParagraphStyle(
+            'HeaderAddress',
             parent=styles['Normal'],
             fontName='Helvetica',
-            fontSize=10,
+            fontSize=7.5,
+            textColor=colors.HexColor('#6B7280')
+        )
+        meta_style = ParagraphStyle(
+            'MetaText',
+            parent=styles['Normal'],
+            fontName='Helvetica',
+            fontSize=8,
+            textColor=colors.black,
+            leading=10
+        )
+        item_header_style = ParagraphStyle(
+            'ItemHeader',
+            parent=styles['Normal'],
+            fontName='Helvetica-Bold',
+            fontSize=8,
+            textColor=colors.white
+        )
+        item_text_style = ParagraphStyle(
+            'ItemText',
+            parent=styles['Normal'],
+            fontName='Helvetica',
+            fontSize=8,
             textColor=colors.black
         )
+        total_text_style = ParagraphStyle(
+            'TotalText',
+            parent=styles['Normal'],
+            fontName='Helvetica-Bold',
+            fontSize=8.5,
+            textColor=colors.HexColor('#15803D')
+        )
 
-        # Header Block
-        story.append(Paragraph("PHYSICAL HEALTH CLINIC", title_style))
-        story.append(Spacer(1, 4))
-        story.append(Paragraph("Your Trusted Partners in Premium Clinical Healthcare", subtitle_style))
-        story.append(Spacer(1, 10))
+        copy_elements = []
 
-        # Contact table
-        contact_data = [
-            [
-                Paragraph("<b>📍 Address:</b> 123 Hospital Road, Freetown, Sierra Leone", meta_style),
-                Paragraph("<b>📞 Contact:</b> +232 76 123 456", meta_style)
-            ],
-            [
-                Paragraph("<b>📧 Email:</b> billing@physicalhealthclinic.sl", meta_style),
-                Paragraph("<b>🌐 Web:</b> physicalhealthclinic.sl", meta_style)
-            ]
-        ]
-        contact_table = Table(contact_data, colWidths=[250, 250])
-        contact_table.setStyle(TableStyle([
-            ('LINEBELOW', (0, -1), (-1, -1), 1, colors.HexColor('#1F6AA5')),
-            ('PADDING', (0, 0), (-1, -1), 4),
+        # 1. Copy banner
+        banner_table = Table([[Paragraph(f"••• {copy_title.upper()} •••", banner_style)]], colWidths=[515])
+        banner_table.setStyle(TableStyle([
+            ('BACKGROUND', (0,0), (-1,-1), colors.HexColor('#EFF6FF')),
+            ('ALIGN', (0,0), (-1,-1), 'CENTER'),
+            ('PADDING', (0,0), (-1,-1), 3),
+            ('BOTTOMPADDING', (0,0), (-1,-1), 4),
         ]))
-        story.append(contact_table)
-        story.append(Spacer(1, 15))
+        copy_elements.append(banner_table)
+        copy_elements.append(Spacer(1, 4))
 
-        # Meta Panel (Receipt ID, Date, Patient, Payment ID)
+        # 2. Header (Logo + Details)
+        logo = self._get_clinic_logo_drawing()
+        header_para = Paragraph(
+            "<b>PHYSICAL HEALTH CLINIC</b><br/>"
+            "<i>“Quality Healthcare, Trusted Care”</i><br/>"
+            "📍 123 Hospital Road, Freetown, Sierra Leone  |  📞 +232 76 123 456",
+            title_style
+        )
+        
+        # We can construct the header details as a nested table
+        header_table_data = [
+            [logo, header_para]
+        ]
+        header_table = Table(header_table_data, colWidths=[50, 465])
+        header_table.setStyle(TableStyle([
+            ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+            ('PADDING', (0,0), (-1,-1), 2),
+            ('LINEBELOW', (0,0), (-1,-1), 1, colors.HexColor('#1E3A8A')),
+            ('BOTTOMPADDING', (0,0), (-1,-1), 4),
+        ]))
+        copy_elements.append(header_table)
+        copy_elements.append(Spacer(1, 5))
+
+        # 3. Metadata Panel
+        presc_id = data.get('PrescriptionID')
+        presc_str = f"PR-{presc_id:04d}" if presc_id else "N/A"
+        doctor_name = data.get('DoctorName', 'N/A')
+        pharmacist_name = data.get('PharmacistName', 'Staff Duty')
+        
         meta_left = (
             f"<b>Receipt No:</b> {receipt_num}<br/>"
-            f"<b>Issue Date:</b> {issue_date}<br/>"
-            f"<b>Printed By:</b> Staff ID {self.worker_id}"
+            f"<b>Prescription No:</b> {presc_str}<br/>"
+            f"<b>Date & Time:</b> {issue_date}"
         )
         meta_right = (
             f"<b>Patient Name:</b> {data['PatientName']}<br/>"
-            f"<b>Payment ID:</b> #{data['PaymentID']}<br/>"
-            f"<b>Payment Method:</b> {data['PaymentMethod']}"
+            f"<b>Prescribing Doctor:</b> {doctor_name}<br/>"
+            f"<b>Dispensing Pharmacist:</b> {pharmacist_name}"
         )
-        panel_data = [
+        
+        meta_table_data = [
             [Paragraph(meta_left, meta_style), Paragraph(meta_right, meta_style)]
         ]
-        panel_table = Table(panel_data, colWidths=[250, 250])
-        panel_table.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#F7F9FC')),
-            ('BOX', (0, 0), (-1, -1), 1, colors.HexColor('#E2E8F0')),
-            ('PADDING', (0, 0), (-1, -1), 10),
+        meta_table = Table(meta_table_data, colWidths=[250, 265])
+        meta_table.setStyle(TableStyle([
+            ('BACKGROUND', (0,0), (-1,-1), colors.HexColor('#F8FAFC')),
+            ('BOX', (0,0), (-1,-1), 0.5, colors.HexColor('#E2E8F0')),
+            ('PADDING', (0,0), (-1,-1), 6),
+            ('VALIGN', (0,0), (-1,-1), 'TOP'),
         ]))
-        story.append(panel_table)
-        story.append(Spacer(1, 20))
+        copy_elements.append(meta_table)
+        copy_elements.append(Spacer(1, 5))
 
-        # Itemized Table
-        table_headers = [Paragraph("<b>Item Description</b>", meta_style), 
-                         Paragraph("<b>Qty</b>", meta_style), 
-                         Paragraph("<b>Unit Price</b>", meta_style), 
-                         Paragraph("<b>Total</b>", meta_style)]
-        table_rows = [table_headers]
-        
+        # 4. Itemized Table
+        is_medicine = (data.get('PaymentType') == 'Medicines')
         subtotal = 0.0
-        for item in items:
+
+        if is_medicine:
+            table_headers = [
+                Paragraph("<b>Medicine / Service</b>", item_header_style), 
+                Paragraph("<b>Qty</b>", item_header_style), 
+                Paragraph("<b>Unit Price</b>", item_header_style), 
+                Paragraph("<b>Subtotal</b>", item_header_style)
+            ]
+            table_rows = [table_headers]
+            for item in items:
+                table_rows.append([
+                    Paragraph(item['description'], item_text_style),
+                    Paragraph(str(item['qty']), item_text_style),
+                    Paragraph(f"Le {item['price']:,.2f}", item_text_style),
+                    Paragraph(f"Le {item['total']:,.2f}", item_text_style)
+                ])
+                subtotal += item['total']
+
+            # Add total row
             table_rows.append([
-                Paragraph(item['description'], meta_style),
-                Paragraph(str(item['qty']), meta_style),
-                Paragraph(f"Le {item['price']:,.2f}", meta_style),
-                Paragraph(f"Le {item['total']:,.2f}", meta_style)
+                Paragraph("<b>GRAND TOTAL DUE</b>", total_text_style), 
+                Paragraph("", item_text_style), 
+                Paragraph("", item_text_style), 
+                Paragraph(f"<b>Le {subtotal:,.2f}</b>", total_text_style)
             ])
-            subtotal += item['total']
 
-        # Totals rows
-        table_rows.append([Paragraph("", meta_style), Paragraph("", meta_style), Paragraph("<b>Subtotal:</b>", meta_style), Paragraph(f"Le {subtotal:,.2f}", meta_style)])
-        table_rows.append([Paragraph("", meta_style), Paragraph("", meta_style), Paragraph("<b>Total Paid:</b>", meta_style), Paragraph(f"<b>Le {subtotal:,.2f}</b>", meta_style)])
+            item_table = Table(table_rows, colWidths=[245, 50, 110, 110])
+            item_table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1E3A8A')),
+                ('BOTTOMPADDING', (0, 0), (-1, 0), 4),
+                ('TOPPADDING', (0, 0), (-1, 0), 4),
+                ('GRID', (0, 0), (-1, -2), 0.5, colors.HexColor('#E2E8F0')),
+                ('PADDING', (0, 0), (-1, -1), 4),
+                ('ALIGN', (1, 0), (-1, -1), 'LEFT'),
+                ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+                ('BACKGROUND', (0, -1), (-1, -1), colors.HexColor('#F0FDF4')),
+                ('LINEABOVE', (0, -1), (-1, -1), 1, colors.HexColor('#15803D')),
+            ]))
+        else:
+            table_headers = [
+                Paragraph("<b>Description / Service</b>", item_header_style), 
+                Paragraph("<b>Amount</b>", item_header_style)
+            ]
+            table_rows = [table_headers]
+            for item in items:
+                table_rows.append([
+                    Paragraph(item['description'], item_text_style),
+                    Paragraph(f"Le {item['total']:,.2f}", item_text_style)
+                ])
+                subtotal += item['total']
 
-        item_table = Table(table_rows, colWidths=[240, 50, 100, 110])
-        item_table.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1F6AA5')),
-            ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
-            ('BOTTOMPADDING', (0, 0), (-1, 0), 8),
-            ('GRID', (0, 0), (-1, -3), 0.5, colors.HexColor('#CBD5E0')),
-            ('PADDING', (0, 0), (-1, -1), 6),
-            ('ALIGN', (1, 0), (-1, -1), 'CENTER'),
-            ('FONTNAME', (0, -2), (-1, -1), 'Helvetica-Bold'),
-        ]))
-        story.append(item_table)
-        story.append(Spacer(1, 30))
+            # Add total row
+            table_rows.append([
+                Paragraph("<b>GRAND TOTAL DUE</b>", total_text_style), 
+                Paragraph(f"<b>Le {subtotal:,.2f}</b>", total_text_style)
+            ])
 
-        # Paid stamp
-        paid_style = ParagraphStyle(
-            'PaidStamp',
-            parent=styles['Heading2'],
-            fontName='Helvetica-Bold',
-            fontSize=16,
-            textColor=colors.HexColor('#4CAF50'),
-            alignment=TA_CENTER
+            item_table = Table(table_rows, colWidths=[385, 130])
+            item_table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1E3A8A')),
+                ('BOTTOMPADDING', (0, 0), (-1, 0), 4),
+                ('TOPPADDING', (0, 0), (-1, 0), 4),
+                ('GRID', (0, 0), (-1, -2), 0.5, colors.HexColor('#E2E8F0')),
+                ('PADDING', (0, 0), (-1, -1), 4),
+                ('ALIGN', (1, 0), (1, -1), 'LEFT'),
+                ('ALIGN', (1, -1), (1, -1), 'RIGHT'),
+                ('ALIGN', (1, 0), (1, 0), 'LEFT'),
+                ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+                ('BACKGROUND', (0, -1), (-1, -1), colors.HexColor('#F0FDF4')),
+                ('LINEABOVE', (0, -1), (-1, -1), 1, colors.HexColor('#15803D')),
+            ]))
+        copy_elements.append(item_table)
+        copy_elements.append(Spacer(1, 5))
+
+        # 5. Footer (Payment details + QR Code)
+        qr_drawing = self._get_qr_code_drawing(receipt_num)
+        
+        footer_left = (
+            f"<b>Payment Method:</b> {data['PaymentMethod']}<br/>"
+            f"<b>Payment Status:</b> <font color='#15803D'><b>PAID & VERIFIED</b></font><br/>"
+            f"<font color='#6B7280' size='6.5'>Verified clinic electronic receipt. Secure transaction.</font>"
         )
-        story.append(Paragraph("✅ PAID & VERIFIED", paid_style))
-        story.append(Spacer(1, 20))
+        
+        footer_table_data = [
+            [Paragraph(footer_left, meta_style), qr_drawing]
+        ]
+        footer_table = Table(footer_table_data, colWidths=[420, 95])
+        footer_table.setStyle(TableStyle([
+            ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+            ('ALIGN', (1,0), (1,0), 'RIGHT'),
+            ('PADDING', (0,0), (-1,-1), 2),
+        ]))
+        copy_elements.append(footer_table)
 
-        # Validity stamp
-        valid_style = ParagraphStyle(
-            'ValidStamp',
+        # Wrap everything into a single outer Table so it behaves as a single block
+        outer_table_data = [[copy_elements]]
+        outer_table = Table(outer_table_data, colWidths=[515])
+        outer_table.setStyle(TableStyle([
+            ('BOX', (0,0), (-1,-1), 1, colors.HexColor('#94A3B8')),
+            ('PADDING', (0,0), (-1,-1), 10),
+            ('BACKGROUND', (0,0), (-1,-1), colors.white),
+        ]))
+
+        return outer_table
+
+    def _create_pdf_receipt(self, file_path):
+        from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+        from reportlab.lib.pagesizes import letter
+        from reportlab.lib import colors
+        from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+        from reportlab.lib.enums import TA_CENTER
+        
+        data = self.selected_payment_data
+        receipt_num = self.receipt_number_entry.get() or f"RCP-{self.selected_receipt_id:06d}"
+        issue_date = self.issue_date_entry.get() or datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        items = self._fetch_receipt_items(data['PaymentID'])
+
+        # Create A4 document (A4 width=595.27, height=841.89)
+        # Margins: left/right=40, top/bottom=30
+        doc = SimpleDocTemplate(
+            file_path,
+            pagesize=(595.27, 841.89),
+            leftMargin=40,
+            rightMargin=40,
+            topMargin=30,
+            bottomMargin=30
+        )
+        
+        story = []
+
+        # 1. Build Patient Copy
+        patient_copy = self._build_receipt_copy_table(receipt_num, issue_date, data, items, "Patient Copy")
+        story.append(patient_copy)
+        story.append(Spacer(1, 15))
+
+        # 2. Build Dashed Cut Line
+        styles = getSampleStyleSheet()
+        cut_line_style = ParagraphStyle(
+            'CutLineText',
             parent=styles['Normal'],
             fontName='Helvetica-Oblique',
-            fontSize=8,
-            textColor=colors.grey,
+            fontSize=7.5,
+            textColor=colors.HexColor('#6B7280'),
             alignment=TA_CENTER
         )
-        story.append(Paragraph("This is an officially certified electronic receipt valid for all medical claims and audits.", valid_style))
+        
+        cut_table_data = [[
+            Paragraph("✂-------------------------------------------------- FOLD / CUT HERE --------------------------------------------------✂", cut_line_style)
+        ]]
+        cut_table = Table(cut_table_data, colWidths=[515])
+        cut_table.setStyle(TableStyle([
+            ('ALIGN', (0,0), (-1,-1), 'CENTER'),
+            ('PADDING', (0,0), (-1,-1), 2),
+        ]))
+        story.append(cut_table)
+        story.append(Spacer(1, 15))
+
+        # 3. Build Clinic Copy
+        clinic_copy = self._build_receipt_copy_table(receipt_num, issue_date, data, items, "Clinic Copy")
+        story.append(clinic_copy)
 
         doc.build(story)
 

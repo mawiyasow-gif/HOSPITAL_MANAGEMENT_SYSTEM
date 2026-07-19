@@ -252,12 +252,9 @@ class PaymentWindow(ctk.CTkToplevel):
             conditions = []
             params = []
 
-            # Role constraint: Pharmacist only sees their own bills
-            if user_role == "Pharmacist":
-                conditions.append("p.BilledBy = %s")
-                params.append(self.worker_id)
-            elif user_role != "Administrator" and user_role != "Accountant" and user_role != "Receptionist":
-                # Other non-privileged roles (like Lab Tech or Doctor) only see their own
+            # Role constraint: only Administrator and Accountant can see all payments.
+            # Other roles (Pharmacist, Receptionist, Doctor, Lab Tech) only see payments they billed/processed.
+            if user_role != "Administrator" and user_role != "Accountant":
                 conditions.append("p.BilledBy = %s")
                 params.append(self.worker_id)
 

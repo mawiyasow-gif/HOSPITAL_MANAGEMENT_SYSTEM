@@ -468,12 +468,13 @@ class ReceptionistDashboard(ctk.CTk):
             self.waiting_card.value_label.configure(text=str(cursor.fetchone()[0]))
 
             # 4. Payments received today
-            cursor.execute("SELECT SUM(Amount) FROM Payment WHERE DATE(PaymentDate) = CURDATE()")
+            worker_id = self.receptionist_user.get("worker_id", 5)
+            cursor.execute("SELECT SUM(Amount) FROM Payment WHERE DATE(PaymentDate) = CURDATE() AND BilledBy = %s", (worker_id,))
             total_pay = cursor.fetchone()[0] or 0
             self.payments_card.value_label.configure(text=f"Le {total_pay:,.2f}")
-
+ 
             # 5. Receipts generated today
-            cursor.execute("SELECT COUNT(*) FROM Receipt WHERE DATE(IssueDate) = CURDATE()")
+            cursor.execute("SELECT COUNT(*) FROM Receipt WHERE DATE(IssueDate) = CURDATE() AND PrintedBy = %s", (worker_id,))
             self.receipts_card.value_label.configure(text=str(cursor.fetchone()[0]))
 
             conn.close()
@@ -560,10 +561,11 @@ class ReceptionistDashboard(ctk.CTk):
                 SELECT py.PaymentID, pt.FullName, py.Amount, py.PaymentMethod, DATE(py.PaymentDate)
                 FROM Payment py
                 LEFT JOIN Patients pt ON py.PatientID = pt.PatientID
+                WHERE py.BilledBy = %s
                 ORDER BY py.PaymentID DESC
                 LIMIT 5
             """
-            cursor.execute(query)
+            cursor.execute(query, (self.receptionist_user.get("worker_id", 5),))
             for row in cursor.fetchall():
                 cleaned = ["" if val is None else str(val) for val in row]
                 cleaned[2] = f"Le {float(cleaned[2]):,.2f}" if cleaned[2] else "Le 0.00"
