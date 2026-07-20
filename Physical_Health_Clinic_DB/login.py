@@ -191,7 +191,7 @@ class LoginApp(ctk.CTk):
                 elif role == "Receptionist":
                     from receptionist_dashboard import ReceptionistDashboard
                     app = ReceptionistDashboard(receptionist_user=current_user)
-                elif role == "Laboratory Technician":
+                elif role in ["Laboratory Technician", "Lab Technician", "Lab Tech"]:
                     from laboratory_technician_dashboard import LaboratoryTechnicianDashboard
                     app = LaboratoryTechnicianDashboard(lab_user=current_user)
                 elif role == "Pharmacist":

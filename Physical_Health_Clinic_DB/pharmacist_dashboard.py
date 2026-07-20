@@ -50,6 +50,7 @@ class PharmacistDashboard(ctk.CTk):
             ("🏠 Dashboard", self.refresh_dashboard),
             ("📦 Inventory", self.open_inventory),
             ("⚡ Dispense Medicine", self.open_dispensing),
+            ("🧾 Receipts", self.open_receipts),
             ("🚪 Logout", self.logout)
         ]
 
@@ -256,7 +257,13 @@ class PharmacistDashboard(ctk.CTk):
         InventoryWindow(self)
 
     def open_dispensing(self):
+        """Open Medicine Dispensing window."""
         MedicineDispensingWindow(self)
+
+    def open_receipts(self):
+        """Open Receipt management module."""
+        from receipt import ReceiptWindow
+        ReceiptWindow(self)
 
     def logout(self):
         confirm = messagebox.askyesno("Confirm Logout", "Are you sure you want to sign out from the Pharmacist Panel?")

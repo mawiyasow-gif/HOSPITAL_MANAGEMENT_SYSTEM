@@ -63,6 +63,7 @@ class ReceptionistDashboard(ctk.CTk):
             ("👥 Patients", self.open_patients),
             ("📅 Appointments", self.open_appointments),
             ("📋 Queue Management", self.open_queue),
+            ("🧾 Receipts", self.open_receipts),
             ("👤 My Profile", self.open_profile),
             ("🚪 Logout", self.logout)
         ]

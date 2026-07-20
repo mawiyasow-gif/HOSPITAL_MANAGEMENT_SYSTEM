@@ -53,6 +53,7 @@ class LaboratoryTechnicianDashboard(ctk.CTk):
         # Menu Items
         menu_items = [
             ("🏠 Dashboard", self.refresh_dashboard),
+            ("🧾 Paid Lab Receipts", self.open_receipts),
             ("🚪 Logout", self.logout)
         ]
 
@@ -372,6 +373,11 @@ class LaboratoryTechnicianDashboard(ctk.CTk):
         except Exception as e:
             print(f"Error loading completed requests: {e}")
 
+    def open_receipts(self):
+        """Open Receipt management module for Paid Lab Receipts verification."""
+        from receipt import ReceiptWindow
+        ReceiptWindow(self)
+
 
 class LabResultsEntryWindow(ctk.CTkToplevel):
     """Window to enter results for a selected laboratory request."""
@@ -512,56 +518,6 @@ class LabResultsEntryWindow(ctk.CTkToplevel):
             self.destroy()
         except Exception as e:
             messagebox.showerror("Database Error", f"Failed to submit laboratory results:\n{e}")
-
-
-    def setup_completed_table(self):
-        container = ctk.CTkFrame(self.tab_completed, fg_color="transparent")
-        container.pack(fill="both", expand=True, padx=15, pady=(5, 15))
-
-        scrollbar = ttk.Scrollbar(container)
-        scrollbar.pack(side="right", fill="y")
-
-        columns = ("Request ID", "Completed Date", "Patient Name", "Doctor Name", "Test Details")
-        self.completed_table = ttk.Treeview(
-            container, 
-            columns=columns, 
-            show="headings", 
-            yscrollcommand=scrollbar.set,
-            height=15
-        )
-        for col in columns:
-            self.completed_table.heading(col, text=col, anchor="w")
-            self.completed_table.column(col, anchor="w", width=180)
-        self.completed_table.column("Request ID", width=100, anchor="center")
-        self.completed_table.column("Test Details", width=400)
-
-        self.completed_table.pack(side="left", fill="both", expand=True)
-        scrollbar.config(command=self.completed_table.yview)
-
-    def load_completed_requests(self):
-        for item in self.completed_table.get_children():
-            self.completed_table.delete(item)
-        try:
-            conn = connect_db()
-            cursor = conn.cursor()
-            cursor.execute("""
-                SELECT lr.RequestID, res.TestDate, p.FullName, hw.FullName, 
-                       GROUP_CONCAT(CONCAT(lt.TestName, ': ', res.ResultDetails) SEPARATOR '; ') AS TestDetails
-                FROM Laboratory_Requests lr
-                LEFT JOIN Patients p ON lr.PatientID = p.PatientID
-                LEFT JOIN Health_Workers hw ON lr.DoctorID = hw.WorkerID
-                JOIN Laboratory_Results res ON lr.RequestID = res.RequestID
-                JOIN Laboratory_Tests lt ON res.TestID = lt.TestID
-                WHERE lr.Status = 'Completed' AND res.TechnicianID = %s
-                GROUP BY lr.RequestID, res.TestDate, p.FullName, hw.FullName
-                ORDER BY res.TestDate DESC
-            """, (self.lab_worker_id,))
-            for row in cursor.fetchall():
-                cleaned = ["" if val is None else str(val) for val in row]
-                self.completed_table.insert("", "end", values=cleaned)
-            conn.close()
-        except Exception as e:
-            print(f"Error loading completed requests: {e}")
 
 
 if __name__ == "__main__":

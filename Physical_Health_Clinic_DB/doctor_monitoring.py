@@ -41,6 +41,31 @@ class DoctorMonitoringWindow(ctk.CTkToplevel):
         self.search_var = ctk.StringVar()
         self.search_var.trace_add("write", lambda *args: self.refresh_views())
 
+        # Top Navigation Bar with Back Button
+        top_nav = ctk.CTkFrame(self, fg_color=dashboard_theme.CARD_BG, height=50, corner_radius=0)
+        top_nav.pack(fill="x", side="top")
+        top_nav.pack_propagate(False)
+
+        btn_back = ctk.CTkButton(
+            top_nav, 
+            text="⬅ Back to Dashboard", 
+            width=160, 
+            height=34,
+            fg_color="#1E3A8A", 
+            hover_color="#1D4ED8", 
+            text_color="#FFFFFF", 
+            font=("Arial", 13, "bold"), 
+            command=self.destroy
+        )
+        btn_back.pack(side="left", padx=20, pady=8)
+
+        ctk.CTkLabel(
+            top_nav,
+            text="🔬 Doctor Performance & Monitoring Dashboard",
+            font=("Arial", 16, "bold"),
+            text_color=dashboard_theme.TEXT_PRIMARY
+        ).pack(side="left", padx=10, pady=8)
+
         # Main Layout: Scrollable Frame
         self.scrollable = ctk.CTkScrollableFrame(self, fg_color=dashboard_theme.BG_COLOR)
         self.scrollable.pack(fill="both", expand=True, padx=10, pady=10)
@@ -105,13 +130,13 @@ class DoctorMonitoringWindow(ctk.CTkToplevel):
         actions_frame = ctk.CTkFrame(header_frame, fg_color="transparent")
         actions_frame.grid(row=0, column=3, sticky="e", padx=20)
         
-        btn_refresh = ctk.CTkButton(actions_frame, text="🔄 Refresh", width=90, fg_color=dashboard_theme.ACCENT_BLUE, text_color="#FFFFFF", font=("Arial", 12, "bold"), command=self.refresh_views)
+        btn_refresh = ctk.CTkButton(actions_frame, text="Refresh", width=90, fg_color=dashboard_theme.ACCENT_BLUE, text_color="#FFFFFF", font=("Arial", 12, "bold"), command=self.refresh_views)
         btn_refresh.pack(side="left", padx=4)
 
-        btn_pdf = ctk.CTkButton(actions_frame, text="📄 Export PDF", width=100, fg_color="#F43F5E", hover_color="#E11D48", text_color="#FFFFFF", font=("Arial", 12, "bold"), command=self.export_pdf)
+        btn_pdf = ctk.CTkButton(actions_frame, text=" Export PDF", width=100, fg_color="#F43F5E", hover_color="#E11D48", text_color="#FFFFFF", font=("Arial", 12, "bold"), command=self.export_pdf)
         btn_pdf.pack(side="left", padx=4)
 
-        btn_excel = ctk.CTkButton(actions_frame, text="💚 Excel (CSV)", width=100, fg_color="#10B981", hover_color="#059669", text_color="#FFFFFF", font=("Arial", 12, "bold"), command=self.export_excel)
+        btn_excel = ctk.CTkButton(actions_frame, text="Excel (CSV)", width=100, fg_color="#10B981", hover_color="#059669", text_color="#FFFFFF", font=("Arial", 12, "bold"), command=self.export_excel)
         btn_excel.pack(side="left", padx=4)
 
         btn_print = ctk.CTkButton(actions_frame, text="🖨️ Print", width=80, fg_color="#64748B", hover_color="#475569", text_color="#FFFFFF", font=("Arial", 12, "bold"), command=self.print_report)
@@ -121,13 +146,13 @@ class DoctorMonitoringWindow(ctk.CTkToplevel):
         self.badges_frame = ctk.CTkFrame(self.scrollable, fg_color="transparent")
         self.badges_frame.pack(fill="x", pady=5)
 
-        self.badge_top_doctor = self.create_badge(self.badges_frame, "👑 Top Doctor:", "Calculating...", "#3B82F6")
+        self.badge_top_doctor = self.create_badge(self.badges_frame, "Top Doctor:", "Calculating...", "#3B82F6")
         self.badge_top_doctor.pack(side="left", padx=10, fill="x", expand=True)
 
         self.badge_highest_workload = self.create_badge(self.badges_frame, "⚡ Workload Peak:", "Calculating...", "#EF4444")
         self.badge_highest_workload.pack(side="left", padx=10, fill="x", expand=True)
 
-        self.badge_avg_time = self.create_badge(self.badges_frame, "⏱️ Avg Consult:", "Calculating...", "#10B981")
+        self.badge_avg_time = self.create_badge(self.badges_frame, "Avg Consult:", "Calculating...", "#10B981")
         self.badge_avg_time.pack(side="left", padx=10, fill="x", expand=True)
 
     def create_badge(self, parent, label_text, value_text, color_hex):
