@@ -252,11 +252,16 @@ class PaymentWindow(ctk.CTkToplevel):
             conditions = []
             params = []
 
-            # Role constraint: only Administrator and Accountant can see all payments.
-            # Other roles (Pharmacist, Receptionist, Doctor, Lab Tech) only see payments they billed/processed.
+            # Role constraint: Administrator and Accountant see all payments.
+            # Receptionist can see all pending payments (e.g. Lab tests, Consultations) or payments billed by themselves.
+            # Other roles (Pharmacist, Doctor, Lab Tech) see payments they billed/processed.
             if user_role != "Administrator" and user_role != "Accountant":
-                conditions.append("p.BilledBy = %s")
-                params.append(self.worker_id)
+                if user_role == "Receptionist":
+                    conditions.append("(p.PaymentMethod = 'Pending' OR p.BilledBy = %s)")
+                    params.append(self.worker_id)
+                else:
+                    conditions.append("p.BilledBy = %s")
+                    params.append(self.worker_id)
 
             # Filter condition
             if choice != "All":
@@ -356,9 +361,9 @@ class PaymentWindow(ctk.CTkToplevel):
             # 1. Update Payment status
             cursor.execute("""
                 UPDATE Payment 
-                SET PaymentMethod = %s, PaymentDate = CURRENT_TIMESTAMP 
+                SET PaymentMethod = %s, PaymentStatus = 'Paid', PaymentDate = CURRENT_TIMESTAMP, BilledBy = %s 
                 WHERE PaymentID = %s
-            """, (method, self.selected_payment_id))
+            """, (method, self.worker_id, self.selected_payment_id))
 
             # 2. Insert into Receipt
             cursor.execute("""
@@ -433,7 +438,10 @@ class PaymentWindow(ctk.CTkToplevel):
             if user_role == "Pharmacist":
                 conditions.append("p.BilledBy = %s")
                 params.append(self.worker_id)
-            elif user_role != "Administrator" and user_role != "Accountant" and user_role != "Receptionist":
+            elif user_role == "Receptionist":
+                conditions.append("(p.PaymentMethod = 'Pending' OR p.BilledBy = %s)")
+                params.append(self.worker_id)
+            elif user_role != "Administrator" and user_role != "Accountant":
                 conditions.append("p.BilledBy = %s")
                 params.append(self.worker_id)
 

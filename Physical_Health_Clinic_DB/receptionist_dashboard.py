@@ -470,7 +470,7 @@ class ReceptionistDashboard(ctk.CTk):
 
             # 4. Payments received today
             worker_id = self.receptionist_user.get("worker_id", 5)
-            cursor.execute("SELECT SUM(Amount) FROM Payment WHERE DATE(PaymentDate) = CURDATE() AND BilledBy = %s", (worker_id,))
+            cursor.execute("SELECT SUM(Amount) FROM Payment WHERE DATE(PaymentDate) = CURDATE() AND BilledBy = %s AND PaymentMethod != 'Pending'", (worker_id,))
             total_pay = cursor.fetchone()[0] or 0
             self.payments_card.value_label.configure(text=f"Le {total_pay:,.2f}")
  
@@ -562,7 +562,7 @@ class ReceptionistDashboard(ctk.CTk):
                 SELECT py.PaymentID, pt.FullName, py.Amount, py.PaymentMethod, DATE(py.PaymentDate)
                 FROM Payment py
                 LEFT JOIN Patients pt ON py.PatientID = pt.PatientID
-                WHERE py.BilledBy = %s
+                WHERE py.BilledBy = %s AND py.PaymentMethod != 'Pending'
                 ORDER BY py.PaymentID DESC
                 LIMIT 5
             """

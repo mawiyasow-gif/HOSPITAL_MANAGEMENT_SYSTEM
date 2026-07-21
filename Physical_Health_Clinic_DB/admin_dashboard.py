@@ -74,6 +74,7 @@ class AdminDashboard(ctk.CTk):
             ("📊 Reports", "open_reports"),
             ("📈 Doctor Monitoring", "open_doctor_monitoring"),
             ("🏥 Services Catalog", "open_services"),
+            ("🧪 Lab Template Manager", "open_lab_template_manager"),
             ("👤 User Management", "open_user_management"),
             ("⚙️ Settings", "open_settings")
         ]
@@ -977,6 +978,11 @@ class AdminDashboard(ctk.CTk):
         """Open the User Management module."""
         from user_management import UserManagementWindow
         UserManagementWindow(self)
+
+    def open_lab_template_manager(self):
+        """Open the Laboratory Template Manager module."""
+        from lab_template_manager import LabTemplateManagerWindow
+        LabTemplateManagerWindow(self)
 
     def open_settings(self):
         """Open the Settings module."""
